@@ -1,18 +1,46 @@
-all:
+download:
 	@echo "Fetching Dependancies"
 	git clone https://github.com/intelxed/xed.git xed
 	git clone https://github.com/intelxed/mbuild.git mbuild
 
+	@echo "Reverting commit 9bdeca6d77065e5f1b23891655a26e510ffae74a"
+	cd xed && git revert 9bdeca6d77065e5f1b23891655a26e510ffae74a --no-edit
+
+build_xed:
+	rm -rf xedInc
+
 	@echo "Building XED"
-	xed/mfile.py -j 9 --static --extra-flags=-fPIC --opt=3 install --install-dir=xedKit
-	xed/mfile.py -c
+	# xed now assumes building in a subdir like ./build
+	mkdir build
+	# this runs very well on Linux; but it sometimes has problems with Windows And Mac
+	cd build && \
+	../xed/mfile.py -j 9 --static --extra-flags=-fPIC --opt=3 --no-encoder install --install-dir=../xedKit && \
+	../xed/mfile.py -c
 
 	@echo "Setting Up"
 	mv xedKit/include/xed xedInc
-	mv xedKit/lib/libxed.a .
+	mkdir lib || true
+
+linux: build_xed
+	mv xedKit/lib/libxed.a ./lib/libxed_linux.a
 
 	@echo "Cleaning Up"
-	rm -rf xedKit
+	rm -rf xedKit build
+
+windows: build_xed
+	mv xedKit/lib/xed.lib ./lib/xed_win.lib
+
+	@echo "Cleaning Up"
+	rm -rf xedKit build
+
+mac: build_xed
+	mv xedKit/lib/libxed.a ./lib/libxed_macos.a
+
+	@echo "Cleaning Up"
+	rm -rf xedKit build
+
+clean_repo:
+	rm -rf mbuild xed
 
 clean:
-	rm -rf xedInc libxed.a
+	rm -rf xedInc build xedKit

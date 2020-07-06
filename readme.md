@@ -27,6 +27,10 @@ updates do not automatically uninstall your custom build.**
 
 ## XED
 
-XED is at commit e72b2c89cbf949af2ee0d26a571ca6a71e13835d
+XED is at commit afbb851b5f2f2ac6cdb6e6d9bebbaf2d4e77286d (April 15 2020)
 
-To update XED, first update the submodules and run `make -f Makefile.xed`...do this on each platform and put the lib's in `/lib` named appropriately.
+To update XED, first run `make download` to download the latest source and make necessary patches to it. Then run `make <platform>` to build xed for the selected platform. If everything works out, run `make clean_repo` to remove the downloaded mbuild and xed source.
+
+Update July 2020:
+
+Commit 9bdeca6d77065e5f1b23891655a26e510ffae74a changes the order of segement registers in the generated xed-reg-enum.h. If left unattended, this will cause database descrepency. Currently, we revert the commit 9bdeca6d77065e5f1b23891655a26e510ffae74a before building xed. This does not affect the xed's own functionality since the xed tests still pass without any issue.
