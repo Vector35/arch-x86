@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -52,6 +52,7 @@ typedef struct xed_operand_storage_s {
     xed_uint8_t modep55c;
     xed_uint8_t mode_first_prefix;
     xed_uint8_t mpxmode;
+    xed_uint8_t must_use_evex;
     xed_uint8_t needrex;
     xed_uint8_t norex;
     xed_uint8_t no_scale_disp8;
@@ -70,7 +71,6 @@ typedef struct xed_operand_storage_s {
     xed_uint8_t rexx;
     xed_uint8_t sae;
     xed_uint8_t sib;
-    xed_uint8_t skip_osz;
     xed_uint8_t tzcnt;
     xed_uint8_t ubit;
     xed_uint8_t using_default_segment0;

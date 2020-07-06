@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ END_LEGAL */
 typedef enum {
   XED_OPERAND_XTYPE_INVALID,
   XED_OPERAND_XTYPE_B80,
+  XED_OPERAND_XTYPE_BF16,
   XED_OPERAND_XTYPE_F16,
   XED_OPERAND_XTYPE_F32,
   XED_OPERAND_XTYPE_F64,

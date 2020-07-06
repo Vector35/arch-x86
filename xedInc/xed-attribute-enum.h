@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -81,6 +81,7 @@ typedef enum {
   XED_ATTRIBUTE_MEMORY_FAULT_SUPPRESSION,
   XED_ATTRIBUTE_MMX_EXCEPT,
   XED_ATTRIBUTE_MPX_PREFIX_ABLE,
+  XED_ATTRIBUTE_MULTIDEST2,
   XED_ATTRIBUTE_MULTISOURCE4,
   XED_ATTRIBUTE_MXCSR,
   XED_ATTRIBUTE_MXCSR_RD,

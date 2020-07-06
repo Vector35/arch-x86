@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -58,6 +58,7 @@ typedef enum {
   XED_CHIP_BONNELL,
   XED_CHIP_SALTWELL,
   XED_CHIP_SILVERMONT,
+  XED_CHIP_VIA,
   XED_CHIP_AMD,
   XED_CHIP_GOLDMONT,
   XED_CHIP_GOLDMONT_PLUS,
@@ -67,12 +68,17 @@ typedef enum {
   XED_CHIP_HASWELL,
   XED_CHIP_BROADWELL,
   XED_CHIP_SKYLAKE,
+  XED_CHIP_COMET_LAKE,
   XED_CHIP_SKYLAKE_SERVER,
+  XED_CHIP_CASCADE_LAKE,
+  XED_CHIP_COOPER_LAKE,
   XED_CHIP_KNL,
   XED_CHIP_KNM,
   XED_CHIP_CANNONLAKE,
   XED_CHIP_ICELAKE,
   XED_CHIP_ICELAKE_SERVER,
+  XED_CHIP_TGL,
+  XED_CHIP_SPR,
   XED_CHIP_FUTURE,
   XED_CHIP_ALL,
   XED_CHIP_LAST

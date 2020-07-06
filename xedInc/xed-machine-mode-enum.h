@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ typedef enum {
   XED_MACHINE_MODE_LEGACY_32, ///< 32b protected mode
   XED_MACHINE_MODE_LEGACY_16, ///< 16b protected mode
   XED_MACHINE_MODE_REAL_16, ///< 16b real mode
+  XED_MACHINE_MODE_REAL_32, ///< 32b real mode (CS.D bit = 1)
   XED_MACHINE_MODE_LAST
 } xed_machine_mode_enum_t;
 

@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -30,11 +30,8 @@ END_LEGAL */
 #  if !defined(XED_DECODER)
 #    define XED_DECODER
 #  endif
-#  if !defined(XED_ENCODER)
-#    define XED_ENCODER
-#  endif
 #  if !defined(XED_GIT_VERSION)
-#    define XED_GIT_VERSION "v10.0-315-g00c6aac"
+#    define XED_GIT_VERSION "11.2.0-7-gf86a405"
 #  endif
 #  if !defined(XED_MPX)
 #    define XED_MPX
@@ -50,5 +47,8 @@ END_LEGAL */
 #  endif
 #  if !defined(XED_SUPPORTS_WBNOINVD)
 #    define XED_SUPPORTS_WBNOINVD
+#  endif
+#  if !defined(XED_VIA_ENABLED)
+#    define XED_VIA_ENABLED
 #  endif
 #endif

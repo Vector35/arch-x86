@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -79,6 +79,7 @@ typedef enum {
   XED_OPERAND_MODE_FIRST_PREFIX,
   XED_OPERAND_MODRM_BYTE,
   XED_OPERAND_MPXMODE,
+  XED_OPERAND_MUST_USE_EVEX,
   XED_OPERAND_NEEDREX,
   XED_OPERAND_NEED_MEMDISP,
   XED_OPERAND_NELEM,
@@ -130,7 +131,6 @@ typedef enum {
   XED_OPERAND_SIBBASE,
   XED_OPERAND_SIBINDEX,
   XED_OPERAND_SIBSCALE,
-  XED_OPERAND_SKIP_OSZ,
   XED_OPERAND_SMODE,
   XED_OPERAND_SRM,
   XED_OPERAND_TZCNT,

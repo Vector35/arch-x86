@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ typedef enum {
   XED_OPERAND_TYPE_IMM,
   XED_OPERAND_TYPE_IMM_CONST,
   XED_OPERAND_TYPE_NT_LOOKUP_FN,
+  XED_OPERAND_TYPE_NT_LOOKUP_FN2,
   XED_OPERAND_TYPE_NT_LOOKUP_FN4,
   XED_OPERAND_TYPE_REG,
   XED_OPERAND_TYPE_LAST

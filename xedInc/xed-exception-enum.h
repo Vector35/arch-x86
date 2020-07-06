@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ typedef enum {
   XED_EXCEPTION_AVX512_E10,
   XED_EXCEPTION_AVX512_E10NF,
   XED_EXCEPTION_AVX512_E11,
-  XED_EXCEPTION_AVX512_E11NF,
   XED_EXCEPTION_AVX512_E12,
   XED_EXCEPTION_AVX512_E12NP,
   XED_EXCEPTION_AVX512_E1NF,

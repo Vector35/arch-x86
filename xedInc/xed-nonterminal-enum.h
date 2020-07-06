@@ -1,6 +1,6 @@
 /*BEGIN_LEGAL 
 
-Copyright (c) 2018 Intel Corporation
+Copyright (c) 2020 Intel Corporation
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -100,8 +100,6 @@ typedef enum {
   XED_NONTERMINAL_GPR8_B,
   XED_NONTERMINAL_GPR8_R,
   XED_NONTERMINAL_GPR8_SB,
-  XED_NONTERMINAL_GPRM_B,
-  XED_NONTERMINAL_GPRM_R,
   XED_NONTERMINAL_GPRV_B,
   XED_NONTERMINAL_GPRV_R,
   XED_NONTERMINAL_GPRV_SB,
@@ -166,6 +164,8 @@ typedef enum {
   XED_NONTERMINAL_ONE,
   XED_NONTERMINAL_ORAX,
   XED_NONTERMINAL_ORBP,
+  XED_NONTERMINAL_ORBX,
+  XED_NONTERMINAL_ORCX,
   XED_NONTERMINAL_ORDX,
   XED_NONTERMINAL_ORSP,
   XED_NONTERMINAL_OSZ_NONTERM,
