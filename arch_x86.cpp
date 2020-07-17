@@ -1135,7 +1135,15 @@ protected:
 				if ((xedReg >= XED_REG_X87_FIRST) && (xedReg <=  XED_REG_X87_LAST))
 				{
 					reg += "ST";
-					reg += ('0' + (xedReg-XED_REG_X87_FIRST));
+					reg += ('0' + (xedReg - XED_REG_X87_FIRST));
+				}
+				// As of July 2020, the XED now outputs these registers as mm0, etc.
+				// However, to maintain backward-compatibility, we need to make them mmx0, etc,
+				// as they previously are
+				else if ((xedReg >= XED_REG_MMX0) && (xedReg <=  XED_REG_MMX1))
+				{
+					reg += "MMX";
+					reg += ('0' + (xedReg - XED_REG_MMX0));
 				}
 				else
 				{
