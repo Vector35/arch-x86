@@ -1,0 +1,18 @@
+all:
+	@echo "Fetching Dependancies"
+	git clone https://github.com/intelxed/xed.git xed
+	git clone https://github.com/intelxed/mbuild.git mbuild
+
+	@echo "Building XED"
+	xed/mfile.py -j 9 --static --extra-flags=-fPIC --opt=3 install --install-dir=xedKit
+	xed/mfile.py -c
+
+	@echo "Setting Up"
+	mv xedKit/include/xed xedInc
+	mv xedKit/lib/libxed.a .
+
+	@echo "Cleaning Up"
+	rm -rf xedKit
+
+clean:
+	rm -rf xedInc libxed.a
