@@ -412,6 +412,9 @@ protected:
      	// Zero out structure data, and keep the current destructuring mode (32/64/etc)
         xed_decoded_inst_zero_keep_mode(xedd);
 
+        xed3_operand_set_cet(xedd, 1);
+        xed3_operand_set_mpxmode(xedd, 1);
+
         // Decode the data and check for errors
         xed_error_enum_t xed_error = xed_decode(xedd, data, (unsigned)len);
         switch(xed_error)
