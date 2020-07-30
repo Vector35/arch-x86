@@ -484,33 +484,6 @@ static void CMovFlagGroup(const int64_t addr, const xed_decoded_inst_t* xedd, Lo
 	il.MarkLabel(doneLabel);
 }
 
-// a ? b : c
-static void Ternary(LowLevelILFunction& il, ExprId condition, ExprId instructionOne, ExprId instructionTwo)
-{
-	LowLevelILLabel trueLabel, falseLabel, doneLabel;
-
-	il.AddInstruction(
-		il.If(
-			condition,
-		trueLabel, falseLabel));
-
-	il.MarkLabel(trueLabel);
-
-	il.AddInstruction(
-		instructionOne
-	);
-
-	il.AddInstruction(il.Goto(doneLabel));
-	il.MarkLabel(falseLabel);
-
-	il.AddInstruction(
-		instructionTwo
-	);
-
-	il.AddInstruction(il.Goto(doneLabel));
-	il.MarkLabel(doneLabel);
-}
-
 static uint64_t GetMaskFromNumBytes(size_t n)
 {
 	uint64_t mask;
