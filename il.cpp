@@ -3774,6 +3774,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_MFENCE:
 	case XED_ICLASS_SFENCE:
 
+	case XED_ICLASS_ENDBR32:
+	case XED_ICLASS_ENDBR64:
 		il.AddInstruction(il.Nop());
 		break;
 
