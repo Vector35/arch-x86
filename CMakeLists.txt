@@ -63,4 +63,9 @@ if(BN_INTERNAL_BUILD)
 		RUNTIME_OUTPUT_DIRECTORY ${BN_CORE_PLUGIN_DIR})
 	add_custom_command(TARGET arch_x86 POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/yasm/${YASM_PATH} ${BN_CORE_PLUGIN_DIR})
+
+	if(APPLE AND NOT BUILD_SERVER)
+		add_custom_command(TARGET arch_x86 POST_BUILD
+			COMMAND codesign -fs - ${BN_CORE_PLUGIN_DIR}/yasm)
+	endif()
 endif()
