@@ -1,6 +1,7 @@
 #include <inttypes.h>
 #include "il.h"
 #include "lowlevelilinstruction.h"
+#include "arch_x86_common_architecture.h"
 
 using namespace BinaryNinja;
 using namespace std;
@@ -187,7 +188,7 @@ static size_t ReadILOperand(LowLevelILFunction& il, const xed_decoded_inst_t* co
 							const size_t addr, const size_t instruction_index,
 							const size_t operand_index, size_t sizeToRead = 0)
 {
-	if(sizeToRead == 0)
+	if (sizeToRead == 0)
 		sizeToRead = xed_decoded_inst_operand_length_bits(xedd, (unsigned)operand_index) / 8;
 	const unsigned int immediateSize = xed_decoded_inst_get_operand_width(xedd) / 8;
 	const int64_t              relbr = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
@@ -300,7 +301,7 @@ static size_t WriteILOperand(LowLevelILFunction& il, const xed_decoded_inst_t* c
 	// other than the whole
 	// this solves some of the problems we have; but not all
 	// we still need the ability to read and write a slice of the operand
-	if(sizeToWrite == 0)
+	if (sizeToWrite == 0)
 		sizeToWrite = xed_decoded_inst_operand_length(xedd, operand_index);
 
 	const xed_operand_enum_t op_name = xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), operand_index));
@@ -484,569 +485,162 @@ static void CMovFlagGroup(const int64_t addr, const xed_decoded_inst_t* xedd, Lo
 	il.MarkLabel(doneLabel);
 }
 
-static uint64_t GetMaskFromNumBytes(size_t n)
-{
-	uint64_t mask;
-	switch (n)
-	{
-	case 1:
-		mask = 0xff;
-		break;
-
-	case 2:
-		mask = 0xffff;
-		break;
-
-	case 3:
-		mask = 0xffffff;
-		break;
-
-	case 4:
-		mask = 0xffffffff;
-		break;
-
-	case 5:
-		mask = 0xffffffffff;
-		break;
-
-	case 6:
-		mask = 0xffffffffffff;
-		break;
-
-	case 7:
-		mask = 0xffffffffffffff;
-		break;
-
-	case 8:
-		mask = 0xffffffffffffffff;
-		break;
-
-	default:
-		mask = 0;
-		break;
-	}
-
-	return mask;
-}
-
-// perform packed comparison on source operand 1 and 2,
-// and save the result in target operand
-// this is used by (v)pcmpeqb/w/d/q and (v)pcmpgtb/w/d/q
-static void PackedComparison(LowLevelILFunction& il, const xed_decoded_inst_t* const xedd, const size_t addr,
-								size_t regSize, size_t cmpGranularity, uint32_t sourceOperandOneIdx,
-								uint32_t sourceOperandTwoIdx, uint32_t targetOperandIdx, uint32_t flag)
-{
-	const size_t ILOperandOne = ReadILOperand(il, xedd, addr, sourceOperandOneIdx, sourceOperandOneIdx);
-	const size_t ILOperandTwo = ReadILOperand(il, xedd, addr, sourceOperandTwoIdx, sourceOperandTwoIdx);
-
-	size_t nCompareUnits = regSize / cmpGranularity;
-	size_t nCompareUnitBits = 8 * cmpGranularity;
-
-	// a comparison unit is either a byte, a word, a dword, or a qword
-	// the corresponding cmpGranularity is 1, 2, 4, 8
-	uint64_t compareUnitMask = GetMaskFromNumBytes(cmpGranularity);
-
-	LowLevelILLabel comparisonLabel, iterationLabel, doneLabel;
-
-	// init the loop
-	// the iterator variable i
-	il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(regSize, 0)));
-	// the result variable
-	il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(1), il.Const(regSize, 0)));
-
-	il.MarkLabel(comparisonLabel);
-
-	// check if we have finished the loop
-	il.AddInstruction(
-		il.If(
-			il.CompareEqual(
-				1,
-				il.Register(1, LLIL_TEMP(0)),
-				il.Const(1, nCompareUnits)
-			),
-			doneLabel,
-			iterationLabel
-		)
-	);
-
-	il.MarkLabel(iterationLabel);
-
-	// do the iteration workload here
-	LowLevelILLabel cmpTrueLabel, cmpDoneLabel;
-
-	if(flag == IL_FLAG_GROUP_E)
-	{
-		il.AddInstruction(
-			il.If(
-				// compare one comparison unit
-				il.CompareEqual(
-					regSize,
-					il.And(regSize, ILOperandOne, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits)))),
-					il.And(regSize, ILOperandTwo, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-				),
-				// according to the packed comparison semantics,
-				// we do not need to do anything if the cmp is not equal
-				cmpTrueLabel, cmpDoneLabel
-			)
-		);
-	}
-	else
-	{
-		il.AddInstruction(
-			il.If(
-				// compare one comparison unit
-				il.CompareSignedGreaterThan(
-					regSize,
-					il.And(regSize, ILOperandOne, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits)))),
-					il.And(regSize, ILOperandTwo, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-				),
-				// according to the packed comparison semantics,
-				// we do not need to do anything if the cmp is not equal
-				cmpTrueLabel, cmpDoneLabel
-			)
-		);
-	}
-
-
-	il.MarkLabel(cmpTrueLabel);
-	// set the corresponding result unit to all 1s if the comparison is equal
-	il.AddInstruction(
-		il.SetRegister(regSize, LLIL_TEMP(1),
-			il.Or(regSize,
-				il.Register(regSize, LLIL_TEMP(1)),
-				il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-													il.Mult(regSize, il.Register(1, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits)))
-			)
-		)
-	);
-
-	il.Goto(cmpDoneLabel);
-
-	// we are done with the cmp here
-	il.MarkLabel(cmpDoneLabel);
-
-	// increment the counter
-	il.AddInstruction(
-		il.SetRegister(1,
-			LLIL_TEMP(0),
-			il.Add(1,
-				il.Register(1, LLIL_TEMP(0)),
-				il.Const(1, 1)
-			)
-		)
-	);
-
-	// goto comparisonLabel
-	il.AddInstruction(il.Goto(comparisonLabel));
-
-	// we are done with the loop here
-	il.MarkLabel(doneLabel);
-
-	// write the change back to IL register
-	il.AddInstruction(
-		WriteILOperand(il, xedd, addr, targetOperandIdx, targetOperandIdx,
-			il.Register(regSize, LLIL_TEMP(1))
-		)
-	);
-}
-
-// perform packed minimum on source operand 1 and 2,
-// and save the result in target operand
-// this is used by pminub, etc
-static void PackedMin(LowLevelILFunction& il, const xed_decoded_inst_t* const xedd, const size_t addr,
-						size_t regSize, size_t cmpGranularity, uint32_t sourceOperandOneIdx,
-						uint32_t sourceOperandTwoIdx, uint32_t targetOperandIdx, bool cmpUnsigned)
-{
-	const size_t ILOperandOne = ReadILOperand(il, xedd, addr, sourceOperandOneIdx, sourceOperandOneIdx);
-	const size_t ILOperandTwo = ReadILOperand(il, xedd, addr, sourceOperandTwoIdx, sourceOperandTwoIdx);
-
-	size_t nCompareUnits = regSize / cmpGranularity;
-	size_t nCompareUnitBits = 8 * cmpGranularity;
-
-	// a comparison unit is either a byte, a word, a dword, or a qword
-	// the corresponding cmpGranularity is 1, 2, 4, 8
-	uint64_t compareUnitMask = GetMaskFromNumBytes(cmpGranularity);
-
-	LowLevelILLabel comparisonLabel, iterationLabel, doneLabel;
-
-	// init the loop
-	// the iterator variable i
-	il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(regSize, 0)));
-	// the result variable
-	il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(1), il.Const(regSize, 0)));
-
-	il.MarkLabel(comparisonLabel);
-
-	// check if we have finished the loop
-	il.AddInstruction(
-		il.If(
-			il.CompareEqual(
-				1,
-				il.Register(1, LLIL_TEMP(0)),
-				il.Const(1, nCompareUnits)
-			),
-			doneLabel,
-			iterationLabel
-		)
-	);
-
-	il.MarkLabel(iterationLabel);
-
-	// do the iteration workload here
-	LowLevelILLabel cmpTrueLabel, cmpFalseLabel, cmpDoneLabel;
-
-	if(cmpUnsigned)
-	{
-		il.AddInstruction(
-			il.If(
-				// compare one comparison unit
-				il.CompareUnsignedLessThan(
-					regSize,
-					il.And(regSize, ILOperandOne, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits)))),
-					il.And(regSize, ILOperandTwo, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-				),
-				cmpTrueLabel, cmpFalseLabel
-			)
-		);
-	}
-	else
-	{
-		il.AddInstruction(
-			il.If(
-				// compare one comparison unit
-				il.CompareSignedLessThan(
-					regSize,
-					il.And(regSize, ILOperandOne, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits)))),
-					il.And(regSize, ILOperandTwo, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-				),
-				// according to the packed comparison semantics,
-				// we do not need to do anything if the cmp is not equal
-				cmpTrueLabel, cmpFalseLabel
-			)
-		);
-	}
-
-
-	il.MarkLabel(cmpTrueLabel);
-	// if op1_unit < op2_unit ==> result_unit = op1_unit
-	// set the corresponding result unit to the unit from operand 1 if the cmp returns true
-	il.AddInstruction(
-		il.SetRegister(regSize, LLIL_TEMP(1),
-			il.Or(regSize,
-				il.Register(regSize, LLIL_TEMP(1)),
-				il.And(regSize, ILOperandOne, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-												il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-			)
-		)
-	);
-	il.Goto(cmpDoneLabel);
-
-	il.MarkLabel(cmpFalseLabel);
-	il.AddInstruction(
-		il.SetRegister(regSize, LLIL_TEMP(1),
-			il.Or(regSize,
-				il.Register(regSize, LLIL_TEMP(1)),
-				il.And(regSize, ILOperandTwo, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-												il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-			)
-		)
-	);
-	il.Goto(cmpDoneLabel);
-
-	// we are done with the cmp here
-	il.MarkLabel(cmpDoneLabel);
-
-	// increment the counter
-	il.AddInstruction(
-		il.SetRegister(1,
-			LLIL_TEMP(0),
-			il.Add(1,
-				il.Register(1, LLIL_TEMP(0)),
-				il.Const(1, 1)
-			)
-		)
-	);
-
-	// goto comparisonLabel
-	il.AddInstruction(il.Goto(comparisonLabel));
-
-	// we are done with loop here
-	il.MarkLabel(doneLabel);
-
-	// write the change back to IL register
-	il.AddInstruction(
-		WriteILOperand(il, xedd, addr, targetOperandIdx, targetOperandIdx,
-			il.Register(regSize, LLIL_TEMP(1))
-		)
-	);
-}
-
-
-// perform packed maximum on source operand 1 and 2,
-// and save the result in target operand
-// this is used by pmaxub, etc
-static void PackedMax(LowLevelILFunction& il, const xed_decoded_inst_t* const xedd, const size_t addr,
-						size_t regSize, size_t cmpGranularity, uint32_t sourceOperandOneIdx,
-						uint32_t sourceOperandTwoIdx, uint32_t targetOperandIdx, bool cmpUnsigned)
-{
-	const size_t ILOperandOne = ReadILOperand(il, xedd, addr, sourceOperandOneIdx, sourceOperandOneIdx);
-	const size_t ILOperandTwo = ReadILOperand(il, xedd, addr, sourceOperandTwoIdx, sourceOperandTwoIdx);
-
-	size_t nCompareUnits = regSize / cmpGranularity;
-	size_t nCompareUnitBits = 8 * cmpGranularity;
-
-	// a comparison unit is either a byte, a word, a dword, or a qword
-	// the corresponding cmpGranularity is 1, 2, 4, 8
-	uint64_t compareUnitMask = GetMaskFromNumBytes(cmpGranularity);
-
-	LowLevelILLabel comparisonLabel, iterationLabel, doneLabel;
-
-	// init the loop
-	// the iterator variable i
-	il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(regSize, 0)));
-	// the result variable
-	il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(1), il.Const(regSize, 0)));
-
-	il.MarkLabel(comparisonLabel);
-
-	// check if we have finished the loop
-	il.AddInstruction(
-		il.If(
-			il.CompareEqual(
-				1,
-				il.Register(1, LLIL_TEMP(0)),
-				il.Const(1, nCompareUnits)
-			),
-			doneLabel,
-			iterationLabel
-		)
-	);
-
-	il.MarkLabel(iterationLabel);
-
-	// do the iteration workload here
-	LowLevelILLabel cmpTrueLabel, cmpFalseLabel, cmpDoneLabel;
-
-	if(cmpUnsigned)
-	{
-		il.AddInstruction(
-			il.If(
-				// compare one comparison unit
-				il.CompareUnsignedGreaterThan(
-					regSize,
-					il.And(regSize, ILOperandOne, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits)))),
-					il.And(regSize, ILOperandTwo, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-				),
-				// according to the packed comparison semantics,
-				// we do not need to do anything if the cmp is not equal
-				cmpTrueLabel, cmpFalseLabel
-			)
-		);
-	}
-	else
-	{
-		il.AddInstruction(
-			il.If(
-				// compare one comparison unit
-				il.CompareSignedGreaterThan(
-					regSize,
-					il.And(regSize, ILOperandOne, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits)))),
-					il.And(regSize, ILOperandTwo, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-														il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-				),
-				cmpTrueLabel, cmpFalseLabel
-			)
-		);
-	}
-
-
-	il.MarkLabel(cmpTrueLabel);
-	// if op1_unit > op2_unit ==> result_unit = op1_unit
-	// set the corresponding result unit to the unit from operand 1 if the cmp returns true
-	il.AddInstruction(
-		il.SetRegister(regSize, LLIL_TEMP(1),
-			il.Or(regSize,
-				il.Register(regSize, LLIL_TEMP(1)),
-				il.And(regSize, ILOperandOne, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-												il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-			)
-		)
-	);
-	il.Goto(cmpDoneLabel);
-
-	il.MarkLabel(cmpFalseLabel);
-	il.AddInstruction(
-		il.SetRegister(regSize, LLIL_TEMP(1),
-			il.Or(regSize,
-				il.Register(regSize, LLIL_TEMP(1)),
-				il.And(regSize, ILOperandTwo, il.ShiftLeft(regSize, il.Const(regSize, compareUnitMask),
-												il.Mult(1, il.Register(regSize, LLIL_TEMP(0)), il.Const(1, nCompareUnitBits))))
-			)
-		)
-	);
-	il.Goto(cmpDoneLabel);
-
-	// we are done with the cmp here
-	il.MarkLabel(cmpDoneLabel);
-
-	// increment the counter
-	il.AddInstruction(
-		il.SetRegister(1,
-			LLIL_TEMP(0),
-			il.Add(1,
-				il.Register(1, LLIL_TEMP(0)),
-				il.Const(1, 1)
-			)
-		)
-	);
-
-	// goto comparisonLabel
-	il.AddInstruction(il.Goto(comparisonLabel));
-
-	// we are done with loop here
-	il.MarkLabel(doneLabel);
-
-	// write the change back to IL register
-	il.AddInstruction(
-		WriteILOperand(il, xedd, addr, targetOperandIdx, targetOperandIdx,
-			il.Register(regSize, LLIL_TEMP(1))
-		)
-	);
-}
-
-static void MoveMask(LowLevelILFunction& il, const xed_decoded_inst_t* const xedd, const size_t addr, size_t inputSize, size_t outputSize, size_t maskStride)
-{
-	const size_t ILOperandTwo = ReadILOperand(il, xedd, addr, 1, 1);
-
-	LowLevelILLabel comparisonLabel, iterationLabel, doneLabel;
-
-	// init the loop
-	// the iterator variable i
-	il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(1, 0)));
-	ExprId loopIter = il.Register(1, LLIL_TEMP(0));
-
-	// the result variable
-	il.AddInstruction(il.SetRegister(outputSize, LLIL_TEMP(1), il.Const(outputSize, 0)));
-
-	il.MarkLabel(comparisonLabel);
-
-	// check if we have finished the loop
-	il.AddInstruction(
-		il.If(
-			il.CompareEqual(
-				1,
-				loopIter,
-				il.Const(1, inputSize / maskStride)
-			),
-			doneLabel,
-			iterationLabel
-		)
-	);
-
-	il.MarkLabel(iterationLabel);
-
-	// test the bit
-	il.AddInstruction(
-		il.SetRegister(1, LLIL_TEMP(2),
-			il.TestBit(inputSize,
-				ILOperandTwo,
-				// we take the highest bit of the current mask byte
-				// the current mask byte is the No. (maskIdx + 1) * maskStride byte
-				il.Sub(inputSize,
-					il.Mult(inputSize,
-						il.Const(inputSize, 8 * maskStride),
-						il.Add(inputSize, loopIter, il.Const(1, 1))
-					),
-					il.Const(1, 1)
-				)
-			)
-		)
-	);
-
-	// put the test result into the result variable
-	il.AddInstruction(
-		il.SetRegister(outputSize, LLIL_TEMP(1),
-			il.Or(outputSize,
-				il.Register(outputSize, LLIL_TEMP(1)),
-				il.ShiftLeft(outputSize,
-					il.Register(1, LLIL_TEMP(2)),
-					loopIter
-				)
-			)
-		)
-	);
-
-	// increment the counter
-	il.AddInstruction(
-		il.SetRegister(1,
-			LLIL_TEMP(0),
-			il.Add(1,
-				il.Register(1, LLIL_TEMP(0)),
-				il.Const(1, 1)
-			)
-		)
-	);
-
-	// goto comparisonLabel
-	il.AddInstruction(il.Goto(comparisonLabel));
-
-	// we are done with loop here
-	il.MarkLabel(doneLabel);
-
-	// write the change back to IL register
-	il.AddInstruction(
-		WriteILOperand(il, xedd, addr, 0, 0,
-			il.Register(outputSize, LLIL_TEMP(1))
-		)
-	);
-}
 
 bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLevelILFunction& il, const xed_decoded_inst_t* const xedd)
 {
 	LowLevelILLabel trueLabel, falseLabel, doneLabel, dirFlagSet, dirFlagClear, dirFlagDone, startLabel;
 	LowLevelILLabel trueLabel2, falseLabel2;
 
-    const xed_iclass_enum_t xedd_iClass = xed_decoded_inst_get_iclass(xedd);
-    const xed_iform_enum_t   xedd_iForm = xed_decoded_inst_get_iform_enum(xedd);
-    const xed_inst_t* const          xi = xed_decoded_inst_inst(xedd);
+    const xed_iclass_enum_t 		xedd_iClass = xed_decoded_inst_get_iclass(xedd);
+    const xed_iform_enum_t   		xedd_iForm = xed_decoded_inst_get_iform_enum(xedd);
+    const xed_inst_t* const			xi = xed_decoded_inst_inst(xedd);
 	// const xed_operand_values_t* const ov = xed_decoded_inst_operands_const(xedd);
-    const unsigned short        instLen = xed_decoded_inst_get_length(xedd);
+    const unsigned short        	instLen = xed_decoded_inst_get_length(xedd);
 	// mode_bits can be used to determine whether the current instruciton is in 16/32/64 bit mode
-	const size_t                mode_bits = xed_decoded_inst_get_machine_mode_bits(xedd);
-	const size_t                addrSize = mode_bits / 8;
+	const size_t                	mode_bits = xed_decoded_inst_get_machine_mode_bits(xedd);
+	const size_t                	addrSize = mode_bits / 8;
 
-    const unsigned short       opOneLen = xed_decoded_inst_operand_length_bits(xedd, 0) / 8;
-    const unsigned short       opTwoLen = xed_decoded_inst_operand_length_bits(xedd, 1) / 8;
-    const unsigned short       opTreLen = xed_decoded_inst_operand_length_bits(xedd, 2) / 8;
-    const xed_operand_t* const    opOne = xed_inst_operand(xi, 0);
-    const xed_operand_t* const    opTwo = xed_inst_operand(xi, 1);
+    const unsigned short			opOneLen = xed_decoded_inst_operand_length_bits(xedd, 0) / 8;
+    const unsigned short			opTwoLen = xed_decoded_inst_operand_length_bits(xedd, 1) / 8;
+    [[maybe_unused]] const unsigned short
+									opTreLen = xed_decoded_inst_operand_length_bits(xedd, 2) / 8;
+    const xed_operand_t* const    	opOne = xed_inst_operand(xi, 0);
+    const xed_operand_t* const    	opTwo = xed_inst_operand(xi, 1);
 	// this is problematic as operand three may or may not exist at all
 	// latest version of xed will complain about this
-    const xed_operand_t* const    opTre = xed_inst_operand(xi, 2);
-    const xed_operand_enum_t opOne_name = xed_operand_name(opOne);
-    const xed_operand_enum_t opTwo_name = xed_operand_name(opTwo);
-    const xed_operand_enum_t opTre_name = xed_operand_name(opTre);
-	const xed_reg_enum_t         regOne = xed_decoded_inst_get_reg(xedd, opOne_name);
-	const xed_reg_enum_t         regTwo = xed_decoded_inst_get_reg(xedd, opTwo_name);
+    const xed_operand_t* const    	opTre = xed_inst_operand(xi, 2);
+    const xed_operand_enum_t 		opOne_name = xed_operand_name(opOne);
+    const xed_operand_enum_t 		opTwo_name = xed_operand_name(opTwo);
+    const xed_operand_enum_t 		opTre_name = xed_operand_name(opTre);
+	const xed_reg_enum_t         	regOne = xed_decoded_inst_get_reg(xedd, opOne_name);
+	const xed_reg_enum_t         	regTwo = xed_decoded_inst_get_reg(xedd, opTwo_name);
 	// const xed_reg_enum_t         regTre = xed_decoded_inst_get_reg(xedd, opTre_name);
-	// const xed_reg_enum_t       baseReg1 = xed_decoded_inst_get_base_reg(xedd, 0);
-	// const xed_reg_enum_t       baseReg2 = xed_decoded_inst_get_base_reg(xedd, 1);
-	const xed_reg_enum_t        segReg1 = xed_decoded_inst_get_seg_reg (xedd, 0);
-	// const xed_reg_enum_t        segReg2 = xed_decoded_inst_get_seg_reg (xedd, 1);
+	// const xed_reg_enum_t       	baseReg1 = xed_decoded_inst_get_base_reg(xedd, 0);
+	// const xed_reg_enum_t       	baseReg2 = xed_decoded_inst_get_base_reg(xedd, 1);
+	const xed_reg_enum_t        	segReg1 = xed_decoded_inst_get_seg_reg (xedd, 0);
+	// const xed_reg_enum_t        	segReg2 = xed_decoded_inst_get_seg_reg (xedd, 1);
 
-    const uint64_t         immediateOne = xed_decoded_inst_get_unsigned_immediate(xedd);
- 	const int64_t     branchDestination = xed_decoded_inst_get_branch_displacement(xedd) + addr + instLen;
+    const uint64_t         			immediateOne = xed_decoded_inst_get_unsigned_immediate(xedd);
+ 	const int64_t     				branchDestination = xed_decoded_inst_get_branch_displacement(xedd) + addr + instLen;
+
+	auto LiftAsIntrinsic = [& il, xi, xedd, addr, xedd_iForm] () mutable {
+
+		typedef struct
+		{
+			uint32_t index;
+			size_t width;
+		} MemoryOperandWriteInfo;
+
+		vector<RegisterOrFlag> outputs = {};
+		vector<ExprId> parameters = {};
+		size_t noperands = xed_inst_noperands(xi);
+		vector<MemoryOperandWriteInfo> memoryOperandWrites = {};
+		size_t numTempRegUsed = 0;
+		for (uint32_t i = 0; i < noperands; i++)
+		{
+			const xed_operand_t* op = xed_inst_operand(xi, i);
+			if (xed_operand_written(op))
+			{
+				xed_operand_enum_t op_name = xed_operand_name(op);
+				switch(op_name)
+				{
+				case XED_OPERAND_REG0:
+				case XED_OPERAND_REG1:
+				case XED_OPERAND_REG2:
+				case XED_OPERAND_REG3:
+				case XED_OPERAND_REG4:
+				case XED_OPERAND_REG5:
+				case XED_OPERAND_REG6:
+				case XED_OPERAND_REG7:
+				case XED_OPERAND_REG8:
+				case XED_OPERAND_BASE0:
+				case XED_OPERAND_BASE1:
+				{
+					xed_reg_enum_t r = xed_decoded_inst_get_reg(xedd, op_name);
+					outputs.push_back(RegisterOrFlag::Register(r));
+					break;
+				}
+				default:
+					// The intrinsic system can only accept registers or flags as outputs,
+					// since it might be strange to write to an arbitrary ExprId.
+					// In order to handle intrinsics that write to memory, we create a temp IL register and
+					// later generate another il intrustion to write the register value to the memory
+					// An example of this is:
+					// 	vmovss  dword [eax], k1, xmm0 (bytes: 6762f17e091100)
+					// which lifts to:
+					// temp0 = _mm_mask_store_ss(k1, xmm0)
+					// [eax.q].d = temp0.d
+					// Note, however, it is quite rare for an intrinsic to write to memory
+					size_t operandWidth = (xed_decoded_inst_operand_length_bits(xedd, i) + 7) >> 3;
+					memoryOperandWrites.push_back({i, operandWidth});
+					outputs.push_back(RegisterOrFlag::Register(LLIL_TEMP(numTempRegUsed)));
+					numTempRegUsed++;
+					break;
+				}
+			}
+			if (xed_operand_read(op))
+			{
+				parameters.push_back(ReadILOperand(il, xedd, addr, i, i));
+			}
+		}
+		X86_INTRINSIC intrinsic = (X86_INTRINSIC)(xedd_iForm + 1000);
+		il.AddInstruction(il.Intrinsic(outputs, intrinsic, parameters));
+		// Generate IL instruction for memory writes
+		for (size_t i = 0; i < memoryOperandWrites.size(); i++)
+		{
+			uint32_t operand = memoryOperandWrites[i].index;
+			size_t openradWidth = memoryOperandWrites[i].width;
+			il.AddInstruction(WriteILOperand(il, xedd, addr, operand, operand,
+				il.Register(openradWidth, LLIL_TEMP(i))));
+		}
+
+		std::unique_lock<std::mutex> intrinsicLock(X86CommonArchitecture::m_intrinsicInputAndOutputLock);
+		if (X86CommonArchitecture::intrinsicInputAndOutput.count(intrinsic) == 0)
+		{
+			xed_extension_enum_t extension = xed_decoded_inst_get_extension(xedd);
+			vector<NameAndType> inputType = vector<NameAndType>();
+			vector<Confidence<Ref<Type>>> outputType = vector<Confidence<Ref<Type>>>();
+			// these are SIMD/vector instructions
+			if ((extension == XED_EXTENSION_AES) || (extension == XED_EXTENSION_AVX) ||
+				(extension == XED_EXTENSION_AVX2) || (extension == XED_EXTENSION_AVX2GATHER) ||
+				(extension == XED_EXTENSION_AVX512EVEX) || (extension == XED_EXTENSION_AVX512VEX) ||
+				(extension == XED_EXTENSION_AVXAES) || (extension == XED_EXTENSION_MMX) ||
+				(extension == XED_EXTENSION_PCLMULQDQ) || (extension == XED_EXTENSION_SHA) ||
+				(extension == XED_EXTENSION_SSE) || (extension == XED_EXTENSION_SSE2) ||
+				(extension == XED_EXTENSION_SSE3) || (extension == XED_EXTENSION_SSE2) ||
+				(extension == XED_EXTENSION_SSE4A) || (extension == XED_EXTENSION_SSSE3) ||
+				(extension == XED_EXTENSION_SSE4A) || (extension == XED_EXTENSION_VIA_PADLOCK_AES) ||
+				(extension == XED_EXTENSION_VIA_PADLOCK_SHA) || (extension == XED_EXTENSION_VPCLMULQDQ)
+			)
+			{
+				for (uint32_t i = 0; i < noperands; i++)
+				{
+					const xed_operand_t* op = xed_inst_operand(xi, i);
+					if (xed_operand_written(op))
+					{
+						size_t n = xed_decoded_inst_operand_elements(xedd, i);
+						size_t bits = xed_decoded_inst_operand_element_size_bits(xedd, i);
+						size_t bytes = (bits + 7) / 8;
+						if (n > 1)
+							outputType.push_back(Type::ArrayType(Type::IntegerType(bytes, false), n));
+						else
+							outputType.push_back(Type::IntegerType(bytes, false));
+					}
+					if (xed_operand_read(op))
+					{
+						size_t n = xed_decoded_inst_operand_elements(xedd, i);
+						size_t bits = xed_decoded_inst_operand_element_size_bits(xedd, i);
+						size_t bytes = (bits + 7) / 8;
+						if (n > 1)
+							inputType.push_back(NameAndType(Type::ArrayType(Type::IntegerType(bytes, false), n)));
+						else
+							inputType.push_back(NameAndType(Type::IntegerType(bytes, false)));
+					}
+				}
+			}
+			X86CommonArchitecture::intrinsicInputAndOutput[intrinsic] = {inputType, outputType};
+		}
+	};
 
 	switch (xedd_iClass)
 	{
@@ -1100,11 +694,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_VPAND:
-		if (xed_classify_avx512(xedd))
-		{
-			il.AddInstruction(il.Unimplemented());
-			break;
-		}
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.And(opOneLen,
@@ -1127,11 +716,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_VPANDN:
-		if (xed_classify_avx512(xedd))
-		{
-			il.AddInstruction(il.Unimplemented());
-			break;
-		}
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.And(opOneLen,
@@ -1142,150 +726,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					),
 				IL_FLAGWRITE_ALL)));
 		break;
-
-	case XED_ICLASS_BSWAP:
-		if (opOneLen == 4)
-		{
-			size_t regSize = opOneLen;
-			ExprId ilReg = ReadILOperand(il, xedd, addr, 0, 0);
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(0), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x000000ff)), il.Const(1, 24))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(1), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x0000ff00)),  il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(2), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x00ff0000)), il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(3), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0xff000000)), il.Const(1, 24))));
-			il.AddInstruction(il.SetRegister(regSize, regOne,
-				il.Or(regSize,
-					il.Register(regSize, LLIL_TEMP(0)),
-					il.Or(regSize,
-						il.Register(regSize, LLIL_TEMP(1)),
-						il.Or(regSize,
-							il.Register(regSize, LLIL_TEMP(2)),
-							il.Register(regSize, LLIL_TEMP(3)))))));
-		}
-		else
-		{
-			size_t regSize = opOneLen;
-			ExprId ilReg = ReadILOperand(il, xedd, addr, 0, 0);
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(0), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize,  0x00000000000000ff)), il.Const(1, 56))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(1), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize,  0x000000000000ff00)), il.Const(1, 40))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(2), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize,  0x0000000000ff0000)), il.Const(1, 24))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(3), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize,  0x00000000ff000000)), il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(4), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x000000ff00000000)), il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(5), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x0000ff0000000000)), il.Const(1, 24))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(6), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x00ff000000000000)), il.Const(1, 40))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(7), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0xff00000000000000)), il.Const(1, 56))));
-			il.AddInstruction(
-				il.SetRegister(regSize,
-					regOne,
-					il.Or(regSize,
-						il.Register(regSize, LLIL_TEMP(0)),
-						il.Or(regSize,
-							il.Register(regSize, LLIL_TEMP(1)),
-							il.Or(regSize,
-								il.Register(regSize, LLIL_TEMP(2)),
-								il.Or(regSize,
-									il.Register(regSize, LLIL_TEMP(3)),
-									il.Or(regSize,
-										il.Register(regSize, LLIL_TEMP(4)),
-										il.Or(regSize,
-											il.Register(regSize, LLIL_TEMP(5)),
-											il.Or(regSize,
-												il.Register(regSize, LLIL_TEMP(6)),
-												il.Register(regSize, LLIL_TEMP(7))
-											)
-										)
-									)
-								)
-							)
-						)
-					)
-				)
-			);
-		}
-		break;
-
-	case XED_ICLASS_MOVBE:
-	{
-		// MOVBE r32, m32: Reverse byte order in m32 and move to r32
-		// movbe also works for 16, 32, and 64 bits operands
-		// note this is NOT "move if below equal", which does not exist
-		switch (opOneLen)
-		{
-		case 2:
-		{
-			size_t regSize = opOneLen;
-			ExprId ilReg = ReadILOperand(il, xedd, addr, 1, 1);
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(0), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x000ff)), il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(1), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0xff00)),  il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, regOne,
-				il.Or(regSize,
-					il.Register(regSize, LLIL_TEMP(0)),
-					il.Register(regSize, LLIL_TEMP(1))
-				)
-			));
-			break;
-		}
-		case 4:
-		{
-			size_t regSize = opOneLen;
-			ExprId ilReg = ReadILOperand(il, xedd, addr, 1, 1);
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(0), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x000000ff)), il.Const(1, 24))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(1), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x0000ff00)),  il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(2), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x00ff0000)), il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(3), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0xff000000)), il.Const(1, 24))));
-			il.AddInstruction(il.SetRegister(regSize, regOne,
-				il.Or(regSize,
-					il.Register(regSize, LLIL_TEMP(0)),
-					il.Or(regSize,
-						il.Register(regSize, LLIL_TEMP(1)),
-						il.Or(regSize,
-							il.Register(regSize, LLIL_TEMP(2)),
-							il.Register(regSize, LLIL_TEMP(3)))))));
-			break;
-		}
-		case 8:
-		{
-			size_t regSize = opOneLen;
-			ExprId ilReg = ReadILOperand(il, xedd, addr, 1, 1);
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(0), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize,  0x00000000000000ff)), il.Const(1, 56))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(1), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize,  0x000000000000ff00)), il.Const(1, 40))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(2), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize,  0x0000000000ff0000)), il.Const(1, 24))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(3), il.ShiftLeft(regSize, il.And(regSize, ilReg, il.Const(regSize,  0x00000000ff000000)), il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(4), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x000000ff00000000)), il.Const(1, 8))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(5), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x0000ff0000000000)), il.Const(1, 24))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(6), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0x00ff000000000000)), il.Const(1, 40))));
-			il.AddInstruction(il.SetRegister(regSize, LLIL_TEMP(7), il.LogicalShiftRight(regSize, il.And(regSize, ilReg, il.Const(regSize, 0xff00000000000000)), il.Const(1, 56))));
-			il.AddInstruction(
-				il.SetRegister(regSize,
-					regOne,
-					il.Or(regSize,
-						il.Register(regSize, LLIL_TEMP(0)),
-						il.Or(regSize,
-							il.Register(regSize, LLIL_TEMP(1)),
-							il.Or(regSize,
-								il.Register(regSize, LLIL_TEMP(2)),
-								il.Or(regSize,
-									il.Register(regSize, LLIL_TEMP(3)),
-									il.Or(regSize,
-										il.Register(regSize, LLIL_TEMP(4)),
-										il.Or(regSize,
-											il.Register(regSize, LLIL_TEMP(5)),
-											il.Or(regSize,
-												il.Register(regSize, LLIL_TEMP(6)),
-												il.Register(regSize, LLIL_TEMP(7))
-											)
-										)
-									)
-								)
-							)
-						)
-					)
-				)
-			);
-			break;
-		}
-		}
-		break;
-	}
 
 	case XED_ICLASS_BT:
 		il.AddInstruction(il.SetFlag(IL_FLAG_C,
@@ -1379,268 +819,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 							il.Const(1, opOneLen * 8))))));
 		break;
 
-	// TZCNT, LZCNT, POPCNT are commented out since the current lifting is not
-	// the best possible
-	// They should be lifted in a more concise way, e.g., using instrinsics
-
-	// case XED_ICLASS_TZCNT:
-	// {
-	// 	LowLevelILLabel comparisonLabel, iterationLabel, loopDoneLabel;
-	// 	LowLevelILLabel incCounterLabel;
-
-	// 	il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(1, 0)));
-
-	// 	il.MarkLabel(comparisonLabel);
-
-	// 	// check if we have finished the loop
-	// 	il.AddInstruction(
-	// 		il.If(
-	// 			il.CompareEqual(
-	// 				1,
-	// 				il.Register(1, LLIL_TEMP(0)),
-	// 				il.Const(1, opTwoLen * 8)
-	// 			),
-	// 			loopDoneLabel,
-	// 			iterationLabel
-	// 		)
-	// 	);
-
-	// 	il.MarkLabel(iterationLabel);
-
-	// 	il.AddInstruction(
-	// 		il.If(
-	// 			il.TestBit(opTwoLen,
-	// 				ReadILOperand(il, xedd, addr, 1, 1),
-	// 				il.Register(1, LLIL_TEMP(0))
-	// 			),
-	// 			loopDoneLabel, incCounterLabel
-	// 		)
-	// 	);
-
-	// 	il.MarkLabel(incCounterLabel);
-	// 	// increment the counter
-	// 	il.AddInstruction(
-	// 		il.SetRegister(1,
-	// 			LLIL_TEMP(0),
-	// 			il.Add(1,
-	// 				il.Register(1, LLIL_TEMP(0)),
-	// 				il.Const(1, 1)
-	// 			)
-	// 		)
-	// 	);
-
-	// 	// goto comparisonLabel
-	// 	il.AddInstruction(il.Goto(comparisonLabel));
-
-	// 	// we are done with loop here
-	// 	il.MarkLabel(loopDoneLabel);
-
-	// 	il.AddInstruction(
-	// 		WriteILOperand(il, xedd, addr, 0, 0,
-	// 			il.Register(1, LLIL_TEMP(0))
-	// 		)
-	// 	);
-
-	// 	il.SetFlag(IL_FLAG_C,
-	// 		il.BoolToInt(
-	// 			1,
-	// 			il.CompareEqual(
-	// 			1,
-	// 			il.Register(1, LLIL_TEMP(0)),
-	// 			il.Const(1, opTwoLen * 8)
-	// 		)
-	// 		)
-	// 	);
-
-	// 	il.SetFlag(IL_FLAG_Z,
-	// 		il.BoolToInt(
-	// 			1,
-	// 			il.CompareEqual(
-	// 			1,
-	// 			il.Register(1, LLIL_TEMP(0)),
-	// 			il.Const(1, 0)
-	// 		)
-	// 		)
-	// 	);
-	// 	break;
-	// }
-
-	// case XED_ICLASS_LZCNT:
-	// {
-	// 	LowLevelILLabel comparisonLabel, iterationLabel, loopDoneLabel;
-	// 	LowLevelILLabel incCounterLabel;
-
-	// 	il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(1, opTwoLen * 8 - 1)));
-
-	// 	il.MarkLabel(comparisonLabel);
-
-	// 	// check if we have finished the loop
-	// 	il.AddInstruction(
-	// 		il.If(
-	// 			il.CompareSignedGreaterEqual(
-	// 				1,
-	// 				il.Register(1, LLIL_TEMP(0)),
-	// 				il.Const(1, 0)
-	// 			),
-	// 			loopDoneLabel,
-	// 			iterationLabel
-	// 		)
-	// 	);
-
-	// 	il.MarkLabel(iterationLabel);
-
-	// 	il.AddInstruction(
-	// 		il.If(
-	// 			il.TestBit(opTwoLen,
-	// 				ReadILOperand(il, xedd, addr, 1, 1),
-	// 				il.Register(1, LLIL_TEMP(0))
-	// 			),
-	// 			loopDoneLabel, incCounterLabel
-	// 		)
-	// 	);
-
-	// 	il.MarkLabel(incCounterLabel);
-	// 	// increment the counter
-	// 	il.AddInstruction(
-	// 		il.SetRegister(1,
-	// 			LLIL_TEMP(0),
-	// 			il.Sub(1,
-	// 				il.Register(1, LLIL_TEMP(0)),
-	// 				il.Const(1, 1)
-	// 			)
-	// 		)
-	// 	);
-
-	// 	// goto comparisonLabel
-	// 	il.AddInstruction(il.Goto(comparisonLabel));
-
-	// 	// we are done with loop here
-	// 	il.MarkLabel(loopDoneLabel);
-
-	// 	il.AddInstruction(
-	// 		WriteILOperand(il, xedd, addr, 0, 0,
-	// 			il.Sub(
-	// 				opTwoLen,
-	// 				il.Const(1, 8 * opTwoLen - 1),
-	// 				il.Register(1, LLIL_TEMP(0))
-	// 			)
-	// 		)
-	// 	);
-
-	// 	il.SetFlag(IL_FLAG_C,
-	// 		il.BoolToInt(
-	// 			1,
-	// 			il.CompareEqual(
-	// 				1,
-	// 				ReadILOperand(il, xedd, addr, 0, 0),
-	// 				il.Const(1, opTwoLen * 8)
-	// 			)
-	// 		)
-	// 	);
-
-	// 	il.SetFlag(IL_FLAG_Z,
-	// 		il.BoolToInt(
-	// 			1,
-	// 			il.CompareEqual(
-	// 				1,
-	// 				ReadILOperand(il, xedd, addr, 0, 0),
-	// 				il.Const(1, 0)
-	// 			)
-	// 		)
-	// 	);
-	// 	break;
-	// }
-
-	// case XED_ICLASS_POPCNT:
-	// {
-	// 	LowLevelILLabel comparisonLabel, iterationLabel, loopDoneLabel;
-	// 	LowLevelILLabel bitSetLable, incCounterLabel;
-
-	// 	il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(1, 0)));
-	// 	il.AddInstruction(il.SetRegister(1, LLIL_TEMP(1), il.Const(1, 0)));
-
-	// 	il.MarkLabel(comparisonLabel);
-
-	// 	// check if we have finished the loop
-	// 	il.AddInstruction(
-	// 		il.If(
-	// 			il.CompareEqual(
-	// 				1,
-	// 				il.Register(1, LLIL_TEMP(0)),
-	// 				il.Const(1, opTwoLen * 8)
-	// 			),
-	// 			loopDoneLabel,
-	// 			iterationLabel
-	// 		)
-	// 	);
-
-	// 	il.MarkLabel(iterationLabel);
-
-	// 	il.AddInstruction(
-	// 		il.If(
-	// 			il.TestBit(opTwoLen,
-	// 				ReadILOperand(il, xedd, addr, 1, 1),
-	// 				il.Register(1, LLIL_TEMP(0))
-	// 			),
-	// 			bitSetLable, incCounterLabel
-	// 		)
-	// 	);
-
-	// 	il.MarkLabel(bitSetLable);
-	// 	il.AddInstruction(
-	// 		il.SetRegister(1,
-	// 			LLIL_TEMP(1),
-	// 			il.Add(1,
-	// 				il.Register(1, LLIL_TEMP(1)),
-	// 				il.Const(1, 1)
-	// 			)
-	// 		)
-	// 	);
-
-	// 	il.MarkLabel(incCounterLabel);
-	// 	// increment the counter
-	// 	il.AddInstruction(
-	// 		il.SetRegister(1,
-	// 			LLIL_TEMP(0),
-	// 			il.Add(1,
-	// 				il.Register(1, LLIL_TEMP(0)),
-	// 				il.Const(1, 1)
-	// 			)
-	// 		)
-	// 	);
-
-	// 	// goto comparisonLabel
-	// 	il.AddInstruction(il.Goto(comparisonLabel));
-
-	// 	// we are done with loop here
-	// 	il.MarkLabel(loopDoneLabel);
-
-	// 	il.AddInstruction(
-	// 		WriteILOperand(il, xedd, addr, 0, 0,
-	// 			il.Register(1, LLIL_TEMP(1))
-	// 		)
-	// 	);
-
-	// 	// OF, SF, ZF, AF, CF, PF are all cleared. ZF is set if SRC = 0, otherwise ZF is cleared
-	// 	il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Const(1, 0)));
-	// 	il.AddInstruction(il.SetFlag(IL_FLAG_S, il.Const(1, 0)));
-	// 	il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Const(1, 0)));
-	// 	il.AddInstruction(il.SetFlag(IL_FLAG_C, il.Const(1, 0)));
-	// 	il.AddInstruction(il.SetFlag(IL_FLAG_P, il.Const(1, 0)));
-
-	// 	il.SetFlag(IL_FLAG_Z,
-	// 		il.BoolToInt(
-	// 			1,
-	// 			il.CompareEqual(
-	// 			1,
-	// 			ReadILOperand(il, xedd, addr, 1, 1),
-	// 			il.Const(1, 0)
-	// 		)
-	// 		)
-	// 	);
-	// 	break;
-	// }
-
 	case XED_ICLASS_ADDSS:
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -1655,7 +833,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -1680,7 +858,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -1705,7 +883,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -1730,7 +908,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -1756,7 +934,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -1781,7 +959,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -1806,7 +984,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -1831,7 +1009,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
@@ -2035,175 +1213,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(il.Unimplemented());
 		break;
 
-	// The VZEROALL and VZEROUPPER are lifted properly
-	// but we have to temparorily comment these out since it will mark all the zmmX as an input
-	// Because it emits ILs like:
-	// xmm0 = xmm0 & 0xffffffffffffffff
-	// xmm1 = xmm1 & 0xffffffffffffffff
-	// ....
-	// xmm15 = xmm15 & 0xffffffffffffffff
-
-	// And this instruction is quite popular, primarily for optimization purposes.
-	// For example, in libc source code, strlen-avx2.s,
-	// we see VZEROUPPER being used a lot near the end of functions.
-
-	// The situation will change when we have better solution for functioin argument resolution
-	// and these zmmX will not be wrongly considered inputs (arguments)
-
-	// case XED_ICLASS_VZEROALL:
-	// {
-	// 	xed_uint_t mode_bits = xed_decoded_inst_get_machine_mode_bits(xedd);
-	// 	size_t limit = 7;
-	// 	if (mode_bits == 64)
-	// 		limit = 15;
-
-	// 	// zero zmm0-zmm7, or zmm0-zmm15
-	// 	for (uint32_t reg = XED_REG_ZMM0; reg <= XED_REG_ZMM0 + limit; reg ++ )
-	// 	{
-	// 		il.AddInstruction(
-	// 			il.SetRegister(64, reg, il.Const(64, 0))
-	// 		);
-	// 	}
-	// 	break;
-	// }
-
-	// case XED_ICLASS_VZEROUPPER:
-	// {
-	// 	xed_uint_t mode_bits = xed_decoded_inst_get_machine_mode_bits(xedd);
-	// 	size_t limit = 7;
-	// 	if (mode_bits == 64)
-	// 		limit = 15;
-
-	// 	// since il.Const() can only hold a constant as uint64_t,
-	// 	// we need to create this 128-bit mask by ourselves
-	// 	il.AddInstruction(il.SetRegister(16, LLIL_TEMP(0), il.Const(8, 0xffffffffffffffffL)));
-	// 	il.AddInstruction(
-	// 		il.SetRegister(16, LLIL_TEMP(0),
-	// 			il.ShiftLeft(16, il.Register(16, LLIL_TEMP(0)), il.Const(1, 64))
-	// 		)
-	// 	);
-	// 	il.AddInstruction(
-	// 		il.SetRegister(16, LLIL_TEMP(0),
-	// 			il.Or(16, il.Register(16, LLIL_TEMP(0)), il.Const(8, 0xffffffffffffffffL))
-	// 		)
-	// 	);
-
-	// 	// for zmm0-zmm7, or zmm0-zmm15
-	// 	// zero all the bits except the lowest 128bits
-	// 	for (uint32_t reg = XED_REG_ZMM0; reg <= XED_REG_ZMM0 + limit; reg ++ )
-	// 	{
-	// 		il.AddInstruction(
-	// 			il.SetRegister(64, reg,
-	// 				il.And(64,
-	// 					il.Register(64, reg),
-	// 					il.Register(64, LLIL_TEMP(0))
-	// 				)
-	// 			)
-	// 		);
-	// 	}
-	// 	break;
-	// }
-
-	case XED_ICLASS_BSF:
-	{
-		// Bit scan forward
-		// if operand[1] == 0 ? goto trueLabel else falseLabel
-		// trueLabel:
-		//    zf = 1;
-		//    goto done;
-		// falseLabel:
-		// TEMP0 = 0
-		// start:
-		// if (testbit(operand[1], TEMP0)) ? goto trueLabel2 else falseLabel2
-		// trueLabel2:
-		//		zf = 0;
-		//		operand[0] = TEMP0;
-		//		goto done
-		// falseLabel2:
-		// TEMP0 = TEMP0 + 1
-		// goto start;
-		// done:
-
-		il.AddInstruction(il.If(il.CompareEqual(opTwoLen, // if operand[1] == 0 ? goto trueLabel else falseLabel
-									ReadILOperand(il, xedd, addr, 1, 1),
-									il.Const(opTwoLen, 0)), trueLabel, falseLabel));
-		il.MarkLabel(trueLabel);                                      // trueLabel:
-		il.AddInstruction(il.SetFlag(IL_FLAG_Z, il.Const(1, 1)));     //ZF = 1
-		il.AddInstruction(il.Goto(doneLabel));                        // goto done
-		il.MarkLabel(falseLabel);                                     // falseLabel:
-
-		il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(1, 0)));  // TEMP0 = 0
-		il.AddInstruction(il.Goto(startLabel));
-		il.MarkLabel(startLabel);                                  // start:
-
-		il.AddInstruction(il.If(il.TestBit(opOneLen, // if (testbit(operand[1], TEMP0))
-			ReadILOperand(il, xedd, addr, 1, 1),
-			il.Register(1, LLIL_TEMP(0))), trueLabel2, falseLabel2));
-		il.MarkLabel(trueLabel2);                                     // trueLabel2:
-
-		il.AddInstruction(il.SetFlag(IL_FLAG_Z, il.Const(1, 0)));     //ZF = 0
-		il.AddInstruction(il.SetRegister(opOneLen, regOne,
-			il.Register(1, LLIL_TEMP(0))));                           // operand[0] = TEMP0;
-		il.AddInstruction(il.Goto(doneLabel));                        // goto done
-		il.MarkLabel(falseLabel2);
-
-		il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0),
-			il.Add(1, il.Register(1, LLIL_TEMP(0)), il.Const(1, 1)))); // TEMP0 = TEMP0 + 1
-		il.AddInstruction(il.Goto(startLabel)); //goto start
-		il.MarkLabel(doneLabel); // done:
-		break;
-	}
-
-	case XED_ICLASS_BSR:
-	{
-		// Bit scan reverse
-		// if operand[1] == 0 ? goto trueLabel else falseLabel
-		// trueLabel:
-		//    zf = 1;
-		//    goto done;
-		// falseLabel:
-		// TEMP0 = opernad[1].size() * 8 - 1
-		// start:
-		// if (testbit(operand[1], TEMP0)) ? goto trueLabel2 else falseLabel2
-		// trueLabel2:
-		//		zf = 0;
-		//		operand[0] = TEMP0;
-		//		goto done
-		// falseLabel2:
-		// TEMP0 = TEMP0 - 1
-		// goto start;
-		// done:
-
-		il.AddInstruction(il.If(il.CompareEqual(opTwoLen, // if operand[1] == 0 ? goto trueLabel else falseLabel
-									ReadILOperand(il, xedd, addr, 1, 1),
-									il.Const(opTwoLen, 0)), trueLabel, falseLabel));
-		il.MarkLabel(trueLabel);                                      // trueLabel:
-		il.AddInstruction(il.SetFlag(IL_FLAG_Z, il.Const(1, 1)));     // ZF = 1
-		il.AddInstruction(il.Goto(doneLabel));                        // goto done
-		il.MarkLabel(falseLabel);                                     // falseLabel:
-
-		il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0), il.Const(1, opTwoLen * 8 - 1)));  // TEMP0 = opernad[1].size() * 8 - 1
-		il.AddInstruction(il.Goto(startLabel));
-		il.MarkLabel(startLabel);                                      // start:
-
-		il.AddInstruction(il.If(il.TestBit(opTwoLen,
-			ReadILOperand(il, xedd, addr, 1, 1),
-			il.Register(1, LLIL_TEMP(0))), trueLabel2, falseLabel2));
-		il.MarkLabel(trueLabel2);                                     // trueLabel2:
-
-		il.AddInstruction(il.SetFlag(IL_FLAG_Z, il.Const(1, 0)));     //ZF = 0
-		il.AddInstruction(il.SetRegister(opOneLen, regOne,
-			il.Register(1, LLIL_TEMP(0))));                           // operand[0] = TEMP0;
-		il.AddInstruction(il.Goto(doneLabel));                        // goto done
-		il.MarkLabel(falseLabel2);
-
-		il.AddInstruction(il.SetRegister(1, LLIL_TEMP(0),
-			il.Sub(1, il.Register(1, LLIL_TEMP(0)), il.Const(1, 1)))); // TEMP0 = TEMP0 - 1
-		il.AddInstruction(il.Goto(startLabel));                        //goto start
-		il.MarkLabel(doneLabel);                                       // done:
-		break;
-	}
-
 	case XED_ICLASS_CALL_NEAR:
 	case XED_ICLASS_CALL_FAR:
 		if (
@@ -2396,60 +1405,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 	}
 
-	case XED_ICLASS_PCMPEQB:
-	case XED_ICLASS_VPCMPEQB:
-	case XED_ICLASS_PCMPEQW:
-	case XED_ICLASS_VPCMPEQW:
-	case XED_ICLASS_PCMPEQD:
-	case XED_ICLASS_VPCMPEQD:
-	case XED_ICLASS_PCMPEQQ:
-	case XED_ICLASS_VPCMPEQQ:
-	{
-		size_t cmpGranularity = xed_decoded_inst_operand_element_size_bits(xedd, 0) / 8;
-		if(xed_classify_avx(xedd))
-		{
-			PackedComparison(il, xedd, addr, opOneLen, cmpGranularity, 1, 2, 0, IL_FLAG_GROUP_E);
-		}
-		else if (xed_classify_avx512(xedd))
-		{
-			// the writemask for AVX512 is not handled yet
-			// below is a temparory workaround
-			// it will be fixed once the lifting for
-			// writemask (along with other stuff) is implemented
-			il.AddInstruction(il.Unimplemented());
-		}
-		else
-		{
-			PackedComparison(il, xedd, addr, opOneLen, cmpGranularity, 0, 1, 0, IL_FLAG_GROUP_E);
-		}
-		break;
-	}
-
-	case XED_ICLASS_PCMPGTB:
-	case XED_ICLASS_VPCMPGTB:
-	case XED_ICLASS_PCMPGTW:
-	case XED_ICLASS_VPCMPGTW:
-	case XED_ICLASS_PCMPGTD:
-	case XED_ICLASS_VPCMPGTD:
-	case XED_ICLASS_PCMPGTQ:
-	case XED_ICLASS_VPCMPGTQ:
-	{
-		size_t cmpGranularity = xed_decoded_inst_operand_element_size_bits(xedd, 0) / 8;
-		if(xed_classify_avx(xedd))
-		{
-			PackedComparison(il, xedd, addr, opOneLen, cmpGranularity, 1, 2, 0, IL_FLAG_GROUP_GT);
-		}
-		else if (xed_classify_avx512(xedd))
-		{
-			il.AddInstruction(il.Unimplemented());
-		}
-		else
-		{
-			PackedComparison(il, xedd, addr, opOneLen, cmpGranularity, 0, 1, 0, IL_FLAG_GROUP_GT);
-		}
-		break;
-	}
-
 	case XED_ICLASS_PALIGNR:
 	{
 		// the immediate for palignr is smaller than 32
@@ -2473,7 +1428,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		// the immediate for palignr is smaller than 32
@@ -2491,122 +1446,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				)
 			)
 		);
-		break;
-	}
-
-	case XED_ICLASS_PMOVMSKB:
-	case XED_ICLASS_VPMOVMSKB:
-	case XED_ICLASS_MOVMSKPS:
-	case XED_ICLASS_VMOVMSKPS:
-	case XED_ICLASS_MOVMSKPD:
-	case XED_ICLASS_VMOVMSKPD:
-	{
-		size_t maskStride = xed_decoded_inst_operand_element_size_bits(xedd, 1) / 8;
-		MoveMask(il, xedd, addr, opTwoLen, opOneLen, maskStride);
-		break;
-	}
-
-	// packed unsigned min
-	case XED_ICLASS_PMINUB:
-	case XED_ICLASS_VPMINUB:
-	case XED_ICLASS_PMINUW:
-	case XED_ICLASS_VPMINUW:
-	case XED_ICLASS_PMINUD:
-	case XED_ICLASS_VPMINUD:
-	// there is no instruction PMINUQ at all
-	case XED_ICLASS_VPMINUQ:
-	{
-		size_t cmpGranularity = xed_decoded_inst_operand_element_size_bits(xedd, 0) / 8;
-		if(xed_classify_avx(xedd))
-		{
-			PackedMin(il, xedd, addr, opOneLen, cmpGranularity, 1, 2, 0, true);
-		}
-		else if (xed_classify_avx512(xedd))
-		{
-			il.AddInstruction(il.Unimplemented());
-		}
-		else
-		{
-			PackedMin(il, xedd, addr, opOneLen, cmpGranularity, 0, 1, 0, true);
-		}
-		break;
-	}
-
-	// packed signed min
-	case XED_ICLASS_PMINSB:
-	case XED_ICLASS_VPMINSB:
-	case XED_ICLASS_PMINSW:
-	case XED_ICLASS_VPMINSW:
-	case XED_ICLASS_PMINSD:
-	case XED_ICLASS_VPMINSD:
-	// there is no instruction PMINSQ at all
-	case XED_ICLASS_VPMINSQ:
-	{
-		size_t cmpGranularity = xed_decoded_inst_operand_element_size_bits(xedd, 0) / 8;
-		if(xed_classify_avx(xedd))
-		{
-			PackedMin(il, xedd, addr, opOneLen, cmpGranularity, 1, 2, 0, false);
-		}
-		else if (xed_classify_avx512(xedd))
-		{
-			il.AddInstruction(il.Unimplemented());
-		}
-		else
-		{
-			PackedMin(il, xedd, addr, opOneLen, cmpGranularity, 0, 1, 0, false);
-		}
-		break;
-	}
-
-	// unsigned signed max
-	case XED_ICLASS_PMAXUB:
-	case XED_ICLASS_VPMAXUB:
-	case XED_ICLASS_PMAXUW:
-	case XED_ICLASS_VPMAXUW:
-	case XED_ICLASS_PMAXUD:
-	case XED_ICLASS_VPMAXUD:
-	// there is no instruction PMAXUQ at all
-	case XED_ICLASS_VPMAXUQ:
-	{
-		size_t cmpGranularity = xed_decoded_inst_operand_element_size_bits(xedd, 0) / 8;
-		if(xed_classify_avx(xedd))
-		{
-			PackedMax(il, xedd, addr, opOneLen, cmpGranularity, 1, 2, 0, true);
-		}
-		else if (xed_classify_avx512(xedd))
-		{
-			il.AddInstruction(il.Unimplemented());
-		}
-		else
-		{
-			PackedMax(il, xedd, addr, opOneLen, cmpGranularity, 0, 1, 0, true);
-		}
-		break;
-	}
-
-	// signed packed max
-	case XED_ICLASS_PMAXSB:
-	case XED_ICLASS_VPMAXSB:
-	case XED_ICLASS_PMAXSW:
-	case XED_ICLASS_VPMAXSW:
-	case XED_ICLASS_PMAXSD:
-	case XED_ICLASS_VPMAXSD:
-	// there is no instruction PMAXSQ at all
-	case XED_ICLASS_VPMAXSQ:
-	{
-		size_t cmpGranularity = xed_decoded_inst_operand_element_size_bits(xedd, 0) / 8;
-		if(xed_classify_avx(xedd))
-		{
-			PackedMax(il, xedd, addr, opOneLen, cmpGranularity, 1, 2, 0, false);
-		}
-		else if (xed_classify_avx512(xedd))
-		{
-			il.AddInstruction(il.Unimplemented());
-		}
-		else
-		{
-			PackedMax(il, xedd, addr, opOneLen, cmpGranularity, 0, 1, 0, false);
-		}
 		break;
 	}
 
@@ -3309,7 +2148,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0, ReadILOperand(il, xedd, addr, 1, 1)));
@@ -3332,7 +2171,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		{
 			if (xed_classify_avx512(xedd))
 			{
-				il.AddInstruction(il.Unimplemented());
+				LiftAsIntrinsic();
 				break;
 			}
 			// the three operands form
@@ -3389,7 +2228,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_VMOVLPD:
 	case XED_ICLASS_VMOVLPS:
 	{
-		if(xed_inst_noperands(xi) == 2)
+		if (xed_inst_noperands(xi) == 2)
 		{
 			// MOVLPD xmm1, m64
 			// VMOVLPD m64, xmm1
@@ -3434,7 +2273,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_VMOVHPD:
 	case XED_ICLASS_VMOVHPS:
 	{
-		if(xed_inst_noperands(xi) == 2)
+		if (xed_inst_noperands(xi) == 2)
 		{
 			// MOVHPD xmm1, m64
 			// DEST[63:0] (Unmodified)
@@ -3800,7 +2639,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_VPOR:
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(
@@ -4546,7 +3385,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_VPXOR:
 		if (xed_classify_avx512(xedd))
 		{
-			il.AddInstruction(il.Unimplemented());
+			LiftAsIntrinsic();
 			break;
 		}
 		il.AddInstruction(
@@ -5225,53 +4064,55 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Add(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
 		break;
 
-	default:
-
-		// reference the read and written register,
-		// so for those instruction with no lifting available,
-		// the dataflow is not lost
-		size_t noperands = xed_inst_noperands(xi);
-		for(uint32_t i = 0; i < noperands; i ++ )
-		{
-			const xed_operand_t* op = xed_inst_operand(xi, i);
-			if(xed_operand_written(op))
-				il.AddInstruction(WriteILOperand(il, xedd, addr, i, i, il.Unimplemented()));
-
-			if(xed_operand_read(op))
-			{
-				const uint8_t opLength = xed_decoded_inst_operand_length_bits(xedd, i) / 8;
-				il.AddInstruction(il.SetRegister(opLength, LLIL_TEMP(0),
-					ReadILOperand(il, xedd, addr, i, i))
-				);
-			}
-		}
-
-        if (((opOne_name == XED_OPERAND_MEM0) || (opOne_name == XED_OPERAND_MEM1) || (opOne_name == XED_OPERAND_AGEN)) ||
-            ((opTwo_name == XED_OPERAND_MEM0) || (opTwo_name == XED_OPERAND_MEM1) || (opTwo_name == XED_OPERAND_AGEN)) ||
-            ((opTre_name == XED_OPERAND_MEM0) || (opTre_name == XED_OPERAND_MEM1) || (opTre_name == XED_OPERAND_AGEN)))
-		{
-			// Instruction is unimplemented but has a memory operand, let the analysis know about the memory access
-			if ((opOne_name == XED_OPERAND_MEM0) || (opOne_name == XED_OPERAND_MEM1) || (opOne_name == XED_OPERAND_AGEN))
-			{
-				il.AddInstruction(il.UnimplementedMemoryRef(opOneLen,
-					GetILOperandMemoryAddress(il, xedd, addr, 0, 0)));
-			}
-			if ((opTwo_name == XED_OPERAND_MEM0) || (opTwo_name == XED_OPERAND_MEM1) || (opTwo_name == XED_OPERAND_AGEN))
-			{
-				il.AddInstruction(il.UnimplementedMemoryRef(opTwoLen,
-					GetILOperandMemoryAddress(il, xedd, addr, 1, 1)));
-			}
-			if ((opTre_name == XED_OPERAND_MEM0) || (opTre_name == XED_OPERAND_MEM1) || (opTre_name == XED_OPERAND_AGEN))
-			{
-				il.AddInstruction(il.UnimplementedMemoryRef(opTreLen,
-					GetILOperandMemoryAddress(il, xedd, addr, 2, 2)));
-			}
-		}
+	case XED_ICLASS_TZCNT:
+	{
+		if (opOneLen == 8)
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_TZCNT_GPR64_GPRMEM64,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
+		else if (opOneLen == 4)
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
 		else
-		{
-			il.AddInstruction(il.Unimplemented());
-		}
-		return true;
+			// for 16 bit version of tzcnt
+			LiftAsIntrinsic();
+
+		break;
+	}
+
+	case XED_ICLASS_LZCNT:
+	{
+		if (opOneLen == 8)
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) }
+				)
+			);
+		else if (opOneLen == 4)
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) }
+				)
+			);
+		else
+			// for 16 bit version of tzcnt
+			LiftAsIntrinsic();
+
+		break;
+	}
+
+	default:
+		LiftAsIntrinsic();
+		break;
 	}
 
 	return true;
