@@ -8,6 +8,7 @@
 extern "C" {
     #include "xedInc/xed-interface.h"
 }
+#include "arch_x86_common_architecture.h"
 
 using namespace BinaryNinja;
 using namespace std;
@@ -401,1226 +402,470 @@ static const char* GetRelocationString(Machox64RelocationType relocType)
 // 	return "Unknown x86_64 relocation";
 // }
 
-class X86CommonArchitecture: public Architecture
+bool X86CommonArchitecture::Decode(const uint8_t* data, size_t len, xed_decoded_inst_t* xedd)
 {
-protected:
-	const size_t m_bits;
-	DISASSEMBLY_OPTIONS m_disassembly_options;
+	// Zero out structure data, and keep the current destructuring mode (32/64/etc)
+	xed_decoded_inst_zero_keep_mode(xedd);
 
-	bool Decode(const uint8_t* data, size_t len, xed_decoded_inst_t* xedd)
+	xed3_operand_set_cet(xedd, 1);
+	xed3_operand_set_mpxmode(xedd, 1);
+
+	// Decode the data and check for errors
+	xed_error_enum_t xed_error = xed_decode(xedd, data, (unsigned)len);
+	switch(xed_error)
 	{
-     	// Zero out structure data, and keep the current destructuring mode (32/64/etc)
-        xed_decoded_inst_zero_keep_mode(xedd);
-
-        xed3_operand_set_cet(xedd, 1);
-        xed3_operand_set_mpxmode(xedd, 1);
-
-        // Decode the data and check for errors
-        xed_error_enum_t xed_error = xed_decode(xedd, data, (unsigned)len);
-        switch(xed_error)
-        {
-        case XED_ERROR_NONE:
-            return true;
-        default:
-            return false;
-        }
+	case XED_ERROR_NONE:
+		return true;
+	default:
+		return false;
 	}
+}
 
-	size_t GetAddressSizeBits()  const
+size_t X86CommonArchitecture::GetAddressSizeBits()  const
+{
+	return GetAddressSize() * 8;
+}
+
+uint64_t X86CommonArchitecture::GetAddressMask() const
+{
+	if (GetAddressSizeBits() == 64)
+		return (uint64_t)-1;
+	return (((uint64_t)1) << GetAddressSizeBits()) - 1;
+}
+
+void X86CommonArchitecture::SetInstructionInfoForInstruction(uint64_t addr, InstructionInfo& result, xed_decoded_inst_t* xedd)
+{
+	result.length = xed_decoded_inst_get_length(xedd);
+
+	const uint64_t               abs_br = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
+	const xed_iform_enum_t   xedd_iForm = xed_decoded_inst_get_iform_enum(xedd);
+	const xed_iclass_enum_t xedd_iClass = xed_decoded_inst_get_iclass(xedd);
+
+	// 1. First parse 'generally', by instruction category, then
+	// 2. break down to special cases and impliment iclass and possibly iform-specific cases
+
+	switch (xed_decoded_inst_get_category(xedd))
 	{
-		return GetAddressSize() * 8;
-	}
+	case XED_CATEGORY_CALL:
+	// CALL instruction with an immediate as the first operand and it's not the next instruction
+		if ((abs_br != addr+result.length) && ((xedd_iForm == XED_IFORM_CALL_NEAR_RELBRz) || (xedd_iForm == XED_IFORM_CALL_NEAR_RELBRd)))
+			result.AddBranch(CallDestination, abs_br);
+		break;
 
-	uint64_t GetAddressMask() const
-	{
-		if (GetAddressSizeBits() == 64)
-			return (uint64_t)-1;
-		return (((uint64_t)1) << GetAddressSizeBits()) - 1;
-	}
-
-	void SetInstructionInfoForInstruction(uint64_t addr, InstructionInfo& result, xed_decoded_inst_t* xedd)
-	{
-		result.length = xed_decoded_inst_get_length(xedd);
-
-		const uint64_t               abs_br = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
-		const xed_iform_enum_t   xedd_iForm = xed_decoded_inst_get_iform_enum(xedd);
-		const xed_iclass_enum_t xedd_iClass = xed_decoded_inst_get_iclass(xedd);
-
-		// 1. First parse 'generally', by instruction category, then
-		// 2. break down to special cases and impliment iclass and possibly iform-specific cases
-
-		switch (xed_decoded_inst_get_category(xedd))
-		{
-		case XED_CATEGORY_CALL:
-		// CALL instruction with an immediate as the first operand and it's not the next instruction
-			if ((abs_br != addr+result.length) && ((xedd_iForm == XED_IFORM_CALL_NEAR_RELBRz) || (xedd_iForm == XED_IFORM_CALL_NEAR_RELBRd)))
-				result.AddBranch(CallDestination, abs_br);
-			break;
-
-		case XED_CATEGORY_UNCOND_BR:
-			if (xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), 0)) == XED_OPERAND_RELBR)
-				result.AddBranch(UnconditionalBranch, abs_br);
-			else
-				result.AddBranch(UnresolvedBranch);
-			break;
-
-		case XED_CATEGORY_COND_BR:
-			result.AddBranch(TrueBranch, abs_br);
-			result.AddBranch(FalseBranch, addr + result.length);
-			break;
-
-		case XED_CATEGORY_INTERRUPT:
-			if (xed_decoded_inst_get_unsigned_immediate(xedd) == 0x80)
-				result.AddBranch(SystemCall);
-			else if (xedd_iClass == XED_ICLASS_INT3)
-				result.AddBranch(ExceptionBranch);
-			break;
-
-		case XED_CATEGORY_SYSCALL:
-			result.AddBranch(SystemCall);
-			break;
-
-		case XED_CATEGORY_SYSRET:
-			result.AddBranch(FunctionReturn);
-			break;
-
-		case XED_CATEGORY_RET:
-			result.AddBranch(FunctionReturn);
-			break;
-
-		default:
-			switch (xedd_iClass)
-			{
-			// case XED_ICLASS_UD0:
-			// case XED_ICLASS_UD1:
-			case XED_ICLASS_UD2:
-			case XED_ICLASS_HLT:
-				result.AddBranch(ExceptionBranch);
-				break;
-
-			default:
-				break;
-			}
-			break;
-		}
-	}
-
-	bool IsConditionalJump(xed_decoded_inst_t* xedd)
-	{
-		return (xed_decoded_inst_get_category(xedd) == XED_CATEGORY_COND_BR);
-	}
-
-	string GetSizeString(const size_t size) const
-	{
-		switch (size)
-		{
-		case 1:
-			return "byte ";
-		case 2:
-			return "word ";
-		case 4:
-			return "dword ";
-		case 8:
-			return "qword ";
-		case 10:
-			return "tword ";
-		case 16:
-			return "oword ";
-		default:
-			return "";
-		}
-	}
-
-	BNRegisterInfo RegisterInfo(xed_reg_enum_t fullWidthReg, size_t offset, size_t size, bool zeroExtend = false)
-	{
-		BNRegisterInfo result;
-		result.fullWidthRegister = fullWidthReg;
-		result.offset = offset;
-		result.size = size;
-		result.extend = zeroExtend ? ZeroExtendToFullWidth : NoExtend;
-		return result;
-	}
-
-	static void GetAddressSizeToken(const short bytes, vector<InstructionTextToken>& result, const bool lowerCase)
-	{
-		// Size
-		switch (bytes)
-		{
-		case 1:
-			if (lowerCase)
-				result.emplace_back(BeginMemoryOperandToken,"byte ");
-			else
-				result.emplace_back(BeginMemoryOperandToken,"BYTE ");
-			break;
-		case 2:
-			if (lowerCase)
-				result.emplace_back(BeginMemoryOperandToken,"word ");
-			else
-				result.emplace_back(BeginMemoryOperandToken,"WORD ");
-			break;
-		case 4:
-			if (lowerCase)
-				result.emplace_back(BeginMemoryOperandToken,"dword ");
-			else
-				result.emplace_back(BeginMemoryOperandToken,"DWORD ");
-			break;
-		case 8:
-			if (lowerCase)
-				result.emplace_back(BeginMemoryOperandToken,"qword ");
-			else
-				result.emplace_back(BeginMemoryOperandToken,"QWORD ");
-			break;
-		case 10:
-			if (lowerCase)
-				result.emplace_back(BeginMemoryOperandToken,"tword ");
-			else
-				result.emplace_back(BeginMemoryOperandToken,"TWORD ");
-			break;
-		case 16:
-			if (lowerCase)
-				result.emplace_back(BeginMemoryOperandToken,"xmmword ");
-			else
-				result.emplace_back(BeginMemoryOperandToken,"XMMWORD ");
-			break;
-		case 32:
-			if (lowerCase)
-				result.emplace_back(BeginMemoryOperandToken,"ymmword ");
-			else
-				result.emplace_back(BeginMemoryOperandToken,"YMMWORD ");
-			break;
-		case 64:
-			if (lowerCase)
-				result.emplace_back(BeginMemoryOperandToken,"zmmword ");
-			else
-				result.emplace_back(BeginMemoryOperandToken,"ZMMWORD ");
-			break;
-		default:
-			break;
-		}
-	}
-
-	unsigned short GetInstructionOpcode(const xed_decoded_inst_t* const xedd, const xed_operand_values_t* const ov, vector<InstructionTextToken>& result) const
-	{
-		string opcode = "";
-		if (xed_decoded_inst_has_mpx_prefix(xedd))
-			opcode += "BND ";
-		if (xed_decoded_inst_is_xacquire(xedd))
-			opcode += "XACQUIRE ";
-		if (xed_decoded_inst_is_xrelease(xedd))
-			opcode += "XRELEASE ";
-		if (xed_operand_values_has_lock_prefix(ov))
-			opcode += "LOCK ";
-		if (xed_operand_values_has_real_rep(ov))
-		{
-			if (xed_operand_values_has_rep_prefix(ov))
-				opcode += "REP ";
-			if (xed_operand_values_has_repne_prefix(ov))
-				opcode += "REPNE ";
-		}
-		else if (xed_operand_values_branch_not_taken_hint(ov))
-			opcode += "HINT-NOT-TAKEN ";
-		else if (xed_operand_values_branch_taken_hint(ov))
-			opcode += "HINT-TAKEN ";
-
-		switch (m_disassembly_options.df)
-		{
-		case DF_INTEL:
-			opcode += string(xed_iform_to_iclass_string_intel(xed_decoded_inst_get_iform_enum(xedd)));
-			break;
-    	case DF_BN_INTEL:
-			// To match asmx86 disassembly
-			switch (xed_decoded_inst_get_iclass(xedd))
-			{
-			case XED_ICLASS_RET_NEAR:
-				opcode += "RETN";
-				break;
-			case XED_ICLASS_JZ:
-				opcode += "JE";
-				break;
-			case XED_ICLASS_JNZ:
-				opcode += "JNE";
-				break;
-			case XED_ICLASS_JNB:
-				opcode += "JAE";
-				break;
-			case XED_ICLASS_JNBE:
-				opcode += "JA";
-				break;
-			case XED_ICLASS_JP:
-				opcode += "JPE";
-				break;
-			case XED_ICLASS_JNP:
-				opcode += "JPO";
-				break;
-			case XED_ICLASS_JNL:
-				opcode += "JGE";
-				break;
-			case XED_ICLASS_JNLE:
-				opcode += "JG";
-				break;
-
-			case XED_ICLASS_SETNB:
-				opcode += "SETAE";
-				break;
-			case XED_ICLASS_SETZ:
-				opcode += "SETE";
-				break;
-			case XED_ICLASS_SETNZ:
-				opcode += "SETNE";
-				break;
-			case XED_ICLASS_SETNBE:
-				opcode += "SETA";
-				break;
-			case XED_ICLASS_SETP:
-				opcode += "SETPE";
-				break;
-			case XED_ICLASS_SETNP:
-				opcode += "SETPO";
-				break;
-			case XED_ICLASS_SETNL:
-				opcode += "SETGE";
-				break;
-			case XED_ICLASS_SETNLE:
-				opcode += "SETG";
-				break;
-
-			case XED_ICLASS_CMOVNB:
-				opcode += "CMOVAE";
-				break;
-			case XED_ICLASS_CMOVZ:
-				opcode += "CMOVE";
-				break;
-			case XED_ICLASS_CMOVNZ:
-				opcode += "CMOVNE";
-				break;
-			case XED_ICLASS_CMOVNBE:
-				opcode += "CMOVA";
-				break;
-			case XED_ICLASS_CMOVP:
-				opcode += "CMOVPE";
-				break;
-			case XED_ICLASS_CMOVNP:
-				opcode += "CMOVPO";
-				break;
-			case XED_ICLASS_CMOVNL:
-				opcode += "CMOVGE";
-				break;
-			case XED_ICLASS_CMOVNLE:
-				opcode += "CMOVG";
-				break;
-
-			default:
-				opcode += string(xed_iform_to_iclass_string_intel(xed_decoded_inst_get_iform_enum(xedd)));
-			}
-			break;
-		case DF_ATT:
-			opcode += string(xed_iform_to_iclass_string_att(xed_decoded_inst_get_iform_enum(xedd)));
-			break;
-		case DF_XED:
-			opcode += string(xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(xedd)));
-			break;
-		default:
-			LogError("Invalid Disassembly Flavor");
-		}
-
-		if (m_disassembly_options.lowerCase)
-			for (char& c : opcode)
-				c = tolower(c);
+	case XED_CATEGORY_UNCOND_BR:
+		if (xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), 0)) == XED_OPERAND_RELBR)
+			result.AddBranch(UnconditionalBranch, abs_br);
 		else
-			for (char& c : opcode)
-				c = toupper(c);
+			result.AddBranch(UnresolvedBranch);
+		break;
 
-		result.emplace_back(InstructionToken, opcode);
+	case XED_CATEGORY_COND_BR:
+		result.AddBranch(TrueBranch, abs_br);
+		result.AddBranch(FalseBranch, addr + result.length);
+		break;
 
-		return (unsigned short)opcode.length();
-	}
+	case XED_CATEGORY_INTERRUPT:
+		if (xed_decoded_inst_get_unsigned_immediate(xedd) == 0x80)
+			result.AddBranch(SystemCall);
+		else if (xedd_iClass == XED_ICLASS_INT3)
+			result.AddBranch(ExceptionBranch);
+		break;
 
-	void GetInstructionPadding(const unsigned int instruction_name_length, vector<InstructionTextToken>& result) const
-	{
-		string padding = "";
-		const short min = 7 < instruction_name_length ? 7 : instruction_name_length;
-		for (unsigned short delim = 0; delim < (8 - min); ++delim)
-			padding += ' ';
-		result.emplace_back(TextToken, padding);
-	}
+	case XED_CATEGORY_SYSCALL:
+		result.AddBranch(SystemCall);
+		break;
 
-	// (in theory) Exactly how XED wants the world to see x86
-	void GetOperandTextIntel(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t len, const xed_operand_values_t* const ov, const xed_inst_t* const xi, vector<InstructionTextToken>& result) const
-	{
-		xed_reg_enum_t extra_index_operand = XED_REG_INVALID;
+	case XED_CATEGORY_SYSRET:
+		result.AddBranch(FunctionReturn);
+		break;
 
-		// Get operands
-		for (unsigned int opIndex = 0; opIndex < xed_inst_noperands(xi); ++opIndex)
+	case XED_CATEGORY_RET:
+		result.AddBranch(FunctionReturn);
+		break;
+
+	default:
+		switch (xedd_iClass)
 		{
-			const xed_operand_t*          op = xed_inst_operand(xi, opIndex);
-			const xed_operand_enum_t op_name = xed_operand_name(op);
+		// case XED_ICLASS_UD0:
+		// case XED_ICLASS_UD1:
+		case XED_ICLASS_UD2:
+		case XED_ICLASS_HLT:
+			result.AddBranch(ExceptionBranch);
+			break;
 
-			// XED's suppressed operands shouln't be represented in Intel syntax
-			if (xed_operand_operand_visibility(op) == XED_OPVIS_SUPPRESSED)
+		default:
+			break;
+		}
+		break;
+	}
+}
+
+bool X86CommonArchitecture::IsConditionalJump(xed_decoded_inst_t* xedd)
+{
+	return (xed_decoded_inst_get_category(xedd) == XED_CATEGORY_COND_BR);
+}
+
+string X86CommonArchitecture::GetSizeString(const size_t size) const
+{
+	switch (size)
+	{
+	case 1:
+		return "byte ";
+	case 2:
+		return "word ";
+	case 4:
+		return "dword ";
+	case 8:
+		return "qword ";
+	case 10:
+		return "tword ";
+	case 16:
+		return "oword ";
+	default:
+		return "";
+	}
+}
+
+BNRegisterInfo X86CommonArchitecture::RegisterInfo(xed_reg_enum_t fullWidthReg, size_t offset, size_t size, bool zeroExtend)
+{
+	BNRegisterInfo result;
+	result.fullWidthRegister = fullWidthReg;
+	result.offset = offset;
+	result.size = size;
+	result.extend = zeroExtend ? ZeroExtendToFullWidth : NoExtend;
+	return result;
+}
+
+void X86CommonArchitecture::GetAddressSizeToken(const short bytes, vector<InstructionTextToken>& result, const bool lowerCase)
+{
+	// Size
+	switch (bytes)
+	{
+	case 1:
+		if (lowerCase)
+			result.emplace_back(BeginMemoryOperandToken,"byte ");
+		else
+			result.emplace_back(BeginMemoryOperandToken,"BYTE ");
+		break;
+	case 2:
+		if (lowerCase)
+			result.emplace_back(BeginMemoryOperandToken,"word ");
+		else
+			result.emplace_back(BeginMemoryOperandToken,"WORD ");
+		break;
+	case 4:
+		if (lowerCase)
+			result.emplace_back(BeginMemoryOperandToken,"dword ");
+		else
+			result.emplace_back(BeginMemoryOperandToken,"DWORD ");
+		break;
+	case 8:
+		if (lowerCase)
+			result.emplace_back(BeginMemoryOperandToken,"qword ");
+		else
+			result.emplace_back(BeginMemoryOperandToken,"QWORD ");
+		break;
+	case 10:
+		if (lowerCase)
+			result.emplace_back(BeginMemoryOperandToken,"tword ");
+		else
+			result.emplace_back(BeginMemoryOperandToken,"TWORD ");
+		break;
+	case 16:
+		if (lowerCase)
+			result.emplace_back(BeginMemoryOperandToken,"xmmword ");
+		else
+			result.emplace_back(BeginMemoryOperandToken,"XMMWORD ");
+		break;
+	case 32:
+		if (lowerCase)
+			result.emplace_back(BeginMemoryOperandToken,"ymmword ");
+		else
+			result.emplace_back(BeginMemoryOperandToken,"YMMWORD ");
+		break;
+	case 64:
+		if (lowerCase)
+			result.emplace_back(BeginMemoryOperandToken,"zmmword ");
+		else
+			result.emplace_back(BeginMemoryOperandToken,"ZMMWORD ");
+		break;
+	default:
+		break;
+	}
+}
+
+unsigned short X86CommonArchitecture::GetInstructionOpcode(const xed_decoded_inst_t* const xedd, const xed_operand_values_t* const ov, vector<InstructionTextToken>& result) const
+{
+	string opcode = "";
+	if (xed_decoded_inst_has_mpx_prefix(xedd))
+		opcode += "BND ";
+	if (xed_decoded_inst_is_xacquire(xedd))
+		opcode += "XACQUIRE ";
+	if (xed_decoded_inst_is_xrelease(xedd))
+		opcode += "XRELEASE ";
+	if (xed_operand_values_has_lock_prefix(ov))
+		opcode += "LOCK ";
+	if (xed_operand_values_has_real_rep(ov))
+	{
+		if (xed_operand_values_has_rep_prefix(ov))
+			opcode += "REP ";
+		if (xed_operand_values_has_repne_prefix(ov))
+			opcode += "REPNE ";
+	}
+	else if (xed_operand_values_branch_not_taken_hint(ov))
+		opcode += "HINT-NOT-TAKEN ";
+	else if (xed_operand_values_branch_taken_hint(ov))
+		opcode += "HINT-TAKEN ";
+
+	switch (m_disassembly_options.df)
+	{
+	case DF_INTEL:
+		opcode += string(xed_iform_to_iclass_string_intel(xed_decoded_inst_get_iform_enum(xedd)));
+		break;
+	case DF_BN_INTEL:
+		// To match asmx86 disassembly
+		switch (xed_decoded_inst_get_iclass(xedd))
+		{
+		case XED_ICLASS_RET_NEAR:
+			opcode += "RETN";
+			break;
+		case XED_ICLASS_JZ:
+			opcode += "JE";
+			break;
+		case XED_ICLASS_JNZ:
+			opcode += "JNE";
+			break;
+		case XED_ICLASS_JNB:
+			opcode += "JAE";
+			break;
+		case XED_ICLASS_JNBE:
+			opcode += "JA";
+			break;
+		case XED_ICLASS_JP:
+			opcode += "JPE";
+			break;
+		case XED_ICLASS_JNP:
+			opcode += "JPO";
+			break;
+		case XED_ICLASS_JNL:
+			opcode += "JGE";
+			break;
+		case XED_ICLASS_JNLE:
+			opcode += "JG";
+			break;
+
+		case XED_ICLASS_SETNB:
+			opcode += "SETAE";
+			break;
+		case XED_ICLASS_SETZ:
+			opcode += "SETE";
+			break;
+		case XED_ICLASS_SETNZ:
+			opcode += "SETNE";
+			break;
+		case XED_ICLASS_SETNBE:
+			opcode += "SETA";
+			break;
+		case XED_ICLASS_SETP:
+			opcode += "SETPE";
+			break;
+		case XED_ICLASS_SETNP:
+			opcode += "SETPO";
+			break;
+		case XED_ICLASS_SETNL:
+			opcode += "SETGE";
+			break;
+		case XED_ICLASS_SETNLE:
+			opcode += "SETG";
+			break;
+
+		case XED_ICLASS_CMOVNB:
+			opcode += "CMOVAE";
+			break;
+		case XED_ICLASS_CMOVZ:
+			opcode += "CMOVE";
+			break;
+		case XED_ICLASS_CMOVNZ:
+			opcode += "CMOVNE";
+			break;
+		case XED_ICLASS_CMOVNBE:
+			opcode += "CMOVA";
+			break;
+		case XED_ICLASS_CMOVP:
+			opcode += "CMOVPE";
+			break;
+		case XED_ICLASS_CMOVNP:
+			opcode += "CMOVPO";
+			break;
+		case XED_ICLASS_CMOVNL:
+			opcode += "CMOVGE";
+			break;
+		case XED_ICLASS_CMOVNLE:
+			opcode += "CMOVG";
+			break;
+
+		default:
+			opcode += string(xed_iform_to_iclass_string_intel(xed_decoded_inst_get_iform_enum(xedd)));
+		}
+		break;
+	case DF_ATT:
+		opcode += string(xed_iform_to_iclass_string_att(xed_decoded_inst_get_iform_enum(xedd)));
+		break;
+	case DF_XED:
+		opcode += string(xed_iclass_enum_t2str(xed_decoded_inst_get_iclass(xedd)));
+		break;
+	default:
+		LogError("Invalid Disassembly Flavor");
+	}
+
+	if (m_disassembly_options.lowerCase)
+		for (char& c : opcode)
+			c = tolower(c);
+	else
+		for (char& c : opcode)
+			c = toupper(c);
+
+	result.emplace_back(InstructionToken, opcode);
+
+	return (unsigned short)opcode.length();
+}
+
+void X86CommonArchitecture::GetInstructionPadding(const unsigned int instruction_name_length, vector<InstructionTextToken>& result) const
+{
+	string padding = "";
+	const short min = 7 < instruction_name_length ? 7 : instruction_name_length;
+	for (unsigned short delim = 0; delim < (8 - min); ++delim)
+		padding += ' ';
+	result.emplace_back(TextToken, padding);
+}
+
+// (in theory) Exactly how XED wants the world to see x86
+void X86CommonArchitecture::GetOperandTextIntel(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t len, const xed_operand_values_t* const ov, const xed_inst_t* const xi, vector<InstructionTextToken>& result) const
+{
+	xed_reg_enum_t extra_index_operand = XED_REG_INVALID;
+
+	// Get operands
+	for (unsigned int opIndex = 0; opIndex < xed_inst_noperands(xi); ++opIndex)
+	{
+		const xed_operand_t*          op = xed_inst_operand(xi, opIndex);
+		const xed_operand_enum_t op_name = xed_operand_name(op);
+
+		// XED's suppressed operands shouln't be represented in Intel syntax
+		if (xed_operand_operand_visibility(op) == XED_OPVIS_SUPPRESSED)
+		{
+			if ((xed_decoded_inst_get_category(xedd) == XED_CATEGORY_STRINGOP) &&
+				(op_name == XED_OPERAND_MEM0 || op_name == XED_OPERAND_MEM1))
 			{
-				if ((xed_decoded_inst_get_category(xedd) == XED_CATEGORY_STRINGOP) &&
-					(op_name == XED_OPERAND_MEM0 || op_name == XED_OPERAND_MEM1))
-				{
-					if (op_name == XED_OPERAND_MEM1)
-						result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
-				}
-				else
-					continue;
-			}
-
-			switch(op_name)
-			{
-			case XED_OPERAND_REG0:
-			case XED_OPERAND_REG1:
-			case XED_OPERAND_REG2:
-			case XED_OPERAND_REG3:
-			case XED_OPERAND_REG4:
-			case XED_OPERAND_REG5:
-			case XED_OPERAND_REG6:
-			case XED_OPERAND_REG7:
-			case XED_OPERAND_REG8:
-			{
-				string reg = "";
-
-				const xed_reg_enum_t xedReg = xed_decoded_inst_get_reg(xedd, op_name);
-				if ((xedReg >= XED_REG_X87_FIRST) && (xedReg <=  XED_REG_X87_LAST))
-				{
-					reg += "ST";
-					reg += ('0' + (xedReg-XED_REG_X87_FIRST));
-				}
-				else
-				{
-					reg += xed_reg_enum_t2str(xedReg);
-				}
-				if (m_disassembly_options.lowerCase)
-					for (char& c : reg)
-						c = tolower(c);
-				result.emplace_back(RegisterToken, reg);
-				break;
-			}
-			case XED_OPERAND_AGEN:
-			case XED_OPERAND_MEM0:
-			{
-				GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, opIndex) / 8, result, m_disassembly_options.lowerCase);
-
-				if (m_disassembly_options.lowerCase)
-					result.emplace_back(TextToken, "ptr ");
-				else
-					result.emplace_back(TextToken, "PTR ");
-				result.emplace_back(TextToken, "[");
-
-				// Segment
-				const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 0);
-				const bool validSegment = (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 0));
-				if (validSegment)
-				{
-					string seg_str(xed_reg_enum_t2str(seg));
-					if (m_disassembly_options.lowerCase)
-						for (char& c : seg_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, seg_str);
-					result.emplace_back(TextToken, ":");
-				}
-
-				bool started = false;
-				const xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 0);
-
-				int64_t disp = xed_decoded_inst_get_memory_displacement(xedd, 0);
-
-				if ((base != XED_REG_INVALID) && !((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP)))
-				{
-					string base_str(xed_reg_enum_t2str(base));
-					if (m_disassembly_options.lowerCase)
-						for (char& c : base_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, base_str);
-					started = true;
-				}
-				else if ((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP))
-				{
-					if (xed_operand_values_has_memory_displacement(ov))
-						disp += addr + len;
-					else
-						disp = addr + len;
-
-					stringstream sstream;
-					if (m_disassembly_options.lowerCase)
-						sstream << "0x" << hex << nouppercase << disp;
-					else
-						sstream << "0x" << hex << uppercase << disp;
-
-					result.emplace_back(CodeRelativeAddressToken, sstream.str(), disp, GetAddressSize());
-
-					result.emplace_back(EndMemoryOperandToken, "]");
-					break;
-				}
-
-				const xed_reg_enum_t index = xed_decoded_inst_get_index_reg(xedd, 0);
-				if (index != XED_REG_INVALID)
-				{
-					if (xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_INDEX_REG_IS_POINTER))
-					{
-						// MPX BNDLDX/BNDSTX instr are unusual in that they use
-						// the index reg as distinct operand.
-						extra_index_operand = index;
-					}
-					else  // normal path
-					{
-						if (started)
-							result.emplace_back(TextToken, "+");
-						started = true;
-
-						string index_str(xed_reg_enum_t2str(index));
-						if (m_disassembly_options.lowerCase)
-							for (char& c : index_str)
-								c = tolower(c);
-
-						result.emplace_back(RegisterToken, index_str);
-
-						const unsigned int scale = xed_decoded_inst_get_scale(xedd, 0);
-						if (scale != 1)
-						{
-							result.emplace_back(TextToken, "*");
-							stringstream sstream;
-							sstream << scale;
-							result.emplace_back(IntegerToken, sstream.str(), scale, 1);
-						}
-					}
-				}
-
-				const unsigned short disp_bytes = xed_decoded_inst_get_memory_displacement_width_bits(xedd, 0) / 8;
-
-				if (xed_operand_values_has_memory_displacement(ov) &&
-					((disp != 0) || (!started && validSegment)))
-				{
-					stringstream sstream;
-					sstream << "0x" << hex;
-					if (m_disassembly_options.lowerCase)
-						sstream << nouppercase;
-					else
-						sstream << uppercase;
-
-					if (started)
-					{
-						if (disp < 0)
-						{
-							result.emplace_back(TextToken, "-");
-							disp = -disp;
-						}
-						else
-							result.emplace_back(TextToken, "+");
-
-						if (disp_bytes == 2)
-							sstream << (uint16_t)disp;
-						else if (disp_bytes == 4)
-							sstream << (uint32_t)disp;
-						else if (disp_bytes == 8)
-							sstream << (uint64_t)disp;
-						else
-							sstream << disp;
-						result.emplace_back(IntegerToken, sstream.str(), disp, disp_bytes);
-					}
-					else
-					{
-						sstream << disp;
-
-						if (validSegment)
-							result.emplace_back(IntegerToken, sstream.str(), disp, GetAddressSize());
-						else
-							result.emplace_back(PossibleAddressToken, sstream.str(), disp, GetAddressSize());
-					}
-				}
-				else if (xed_operand_values_has_memory_displacement(ov) &&
-					((disp == 0) && (!started)))
-				{
-					result.emplace_back(IntegerToken, "0x0", disp, GetAddressSize());
-				}
-				result.emplace_back(EndMemoryOperandToken, "]");
-
-				break;
-			}
-			case XED_OPERAND_MEM1:
-			{
-				GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, opIndex) / 8, result, m_disassembly_options.lowerCase);
-
-				if (m_disassembly_options.lowerCase)
-					result.emplace_back(TextToken, "ptr ");
-				else
-					result.emplace_back(TextToken, "PTR ");
-
-				// Segment
-				const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 1);
-				if (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 1))
-				{
-					string seg_str(xed_reg_enum_t2str(seg));
-					if (m_disassembly_options.lowerCase)
-						for (char& c : seg_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, seg_str);
-
-					result.emplace_back(TextToken, ":");
-				}
-
-				result.emplace_back(TextToken, "[");
-				const xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 1);
-				if (base != XED_REG_INVALID)
-				{
-					string base_str(xed_reg_enum_t2str(base));
-					if (m_disassembly_options.lowerCase)
-						for (char& c : base_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, base_str);
-				}
-				result.emplace_back(EndMemoryOperandToken, "]");
-
-				break;
-			}
-			case XED_OPERAND_IMM0:
-			{
-				const size_t            addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
- 				const unsigned int immediateSize = xed_decoded_inst_get_operand_width(xedd) / 8;
-
-				stringstream sstream;
-				sstream << "0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				if (xed_decoded_inst_get_immediate_is_signed(xedd) && (immediateSize != 1))
-				{
-					const int64_t immediateValue = xed_decoded_inst_get_signed_immediate(xedd);
-
-					if (immediateValue >= 0)
-						sstream << immediateValue;  // Don't zero extend
-					else
-					{
-						// I'm not proud of this switch statement... It was the product of a lot of pain.
-						switch (immediateSize)  // For sign extentions
-						{
-						case 1:
-							sstream << (int8_t)immediateValue;
-							break;
-						case 2:
-							sstream << (int16_t)immediateValue;
-							break;
-						case 4:
-							sstream << (int32_t)immediateValue;
-							break;
-						default:
-							sstream << (int64_t)immediateValue;
-						}
-					}
-
-					if (immediateSize == addrSize)
-						result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
-					else
-						result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
-				}
-				else
-				{
-					const uint64_t immediateValue = xed_decoded_inst_get_unsigned_immediate(xedd);
-					sstream << immediateValue;
-					if (immediateSize == addrSize)
-						result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
-					else
-						result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
-				}
-				break;
-			}
-			case XED_OPERAND_IMM1:  // The ENTER instruction
-			{
-				stringstream sstream;
-				sstream << "0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << (uint16_t)xed_decoded_inst_get_second_immediate(xedd);
-				result.emplace_back(IntegerToken, sstream.str(), xed_decoded_inst_get_second_immediate(xedd), 1);
-				break;
-			}
-			case XED_OPERAND_PTR:  // TODO...remove?
-			{
-				stringstream sstream;
-				sstream << "0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << xed_decoded_inst_get_branch_displacement(xedd);
-				result.emplace_back(PossibleAddressToken, sstream.str(), xed_decoded_inst_get_branch_displacement(xedd), 8);
-				break;
-			}
-			case XED_OPERAND_RELBR:
-			{
-				const int64_t relbr = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
-
-				stringstream sstream;
-				sstream << "0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << relbr;
-				result.emplace_back(CodeRelativeAddressToken, sstream.str(), relbr, 8);
-				break;
-			}
-			default:
-			{
-				result.emplace_back(TextToken, "unimplimented");
-			}  // default case of outer switch
-			}  // outer switch
-
-			// If there is another operand and it is visable, print delimiter
-			if ((opIndex != xed_inst_noperands(xi)-1) &&
-				((xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_EXPLICIT) ||
-				(xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_IMPLICIT)))
+				if (op_name == XED_OPERAND_MEM1)
 					result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
-		}
-
-		if (extra_index_operand != XED_REG_INVALID)
-		{
-			result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
-			string reg = xed_reg_enum_t2str(extra_index_operand);
-			if (m_disassembly_options.lowerCase)
-				for (char& c : reg)
-					c = tolower(c);
-			result.emplace_back(RegisterToken, reg);
-		}
-	}
-
-	// The syntax used by asmx86, that users are used to (also the only one that should be garenteed to roundtrip with asm)
-	void GetOperandTextBNIntel(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t len, const xed_operand_values_t* const ov, const xed_inst_t* const xi, vector<InstructionTextToken>& result) const
-	{
-		xed_reg_enum_t extra_index_operand = XED_REG_INVALID;
-
-		// Get operands
-		for (unsigned int opIndex = 0; opIndex < xed_inst_noperands(xi); ++opIndex)
-		{
-			const xed_operand_t*          op = xed_inst_operand(xi, opIndex);
-			const xed_operand_enum_t op_name = xed_operand_name(op);
-
-			// XED's suppressed operands shouln't be represented in Intel syntax
-			if (xed_operand_operand_visibility(op) == XED_OPVIS_SUPPRESSED)
-			{
-				if ((xed_decoded_inst_get_category(xedd) == XED_CATEGORY_STRINGOP) &&
-					(op_name == XED_OPERAND_MEM0 || op_name == XED_OPERAND_MEM1))
-				{
-					if (op_name == XED_OPERAND_MEM1)
-						result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
-				}
-				else
-					continue;
 			}
-
-			if ((xed_operand_operand_visibility(op) == XED_OPVIS_IMPLICIT) && (xed_decoded_inst_get_reg(xedd, op_name) == XED_REG_ST0))
-				continue;
-
-			switch(op_name)
-			{
-			case XED_OPERAND_REG0:
-			case XED_OPERAND_REG1:
-			case XED_OPERAND_REG2:
-			case XED_OPERAND_REG3:
-			case XED_OPERAND_REG4:
-			case XED_OPERAND_REG5:
-			case XED_OPERAND_REG6:
-			case XED_OPERAND_REG7:
-			case XED_OPERAND_REG8:
-			{
-				string reg = "";
-
-				const xed_reg_enum_t xedReg = xed_decoded_inst_get_reg(xedd, op_name);
-				if ((xedReg >= XED_REG_X87_FIRST) && (xedReg <=  XED_REG_X87_LAST))
-				{
-					reg += "ST";
-					reg += ('0' + (xedReg - XED_REG_X87_FIRST));
-				}
-				// As of July 2020, the XED now outputs these registers as mm0, etc.
-				// However, to maintain backward-compatibility, we need to make them mmx0, etc,
-				// as they previously are
-				else if ((xedReg >= XED_REG_MMX0) && (xedReg <=  XED_REG_MMX1))
-				{
-					reg += "MMX";
-					reg += ('0' + (xedReg - XED_REG_MMX0));
-				}
-				else
-				{
-					reg += xed_reg_enum_t2str(xedReg);
-				}
-
-				if (m_disassembly_options.lowerCase)
-					for (char& c : reg)
-						c = tolower(c);
-
-				result.emplace_back(RegisterToken, reg);
-
-				// handle the {z} modifier
-				if (XED_REG_K1 <= xedReg && xedReg <= XED_REG_K7)
-				{
-					if(xed_decoded_inst_zeroing(xedd))
-					{
-						if (m_disassembly_options.lowerCase)
-							result.emplace_back(TextToken, " {z}");
-						else
-							result.emplace_back(TextToken, " {Z}");
-					}
-				}
-
-				break;
-			}
-			case XED_OPERAND_AGEN:
-			case XED_OPERAND_MEM0:
-			{
-				// Size
-				if (xed_inst_iclass(xi) != XED_ICLASS_LEA)
-					GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, opIndex) / 8, result, m_disassembly_options.lowerCase);
-
-				result.emplace_back(TextToken, "[");
-				// Segment
-				const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 0);
-				const bool validSegment = (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 0));
-				if (validSegment)
-				{
-					string seg_str(xed_reg_enum_t2str(seg));
-					if (m_disassembly_options.lowerCase)
-						for (char& c : seg_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, seg_str);
-					result.emplace_back(TextToken, ":");
-				}
-
-				bool started = false;
-				xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 0);
-
-				int64_t disp = xed_decoded_inst_get_memory_displacement(xedd, 0);
-
-				if ((base != XED_REG_INVALID) && !((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP)))
-				{
-					string base_str(xed_reg_enum_t2str(base));
-					if (m_disassembly_options.lowerCase)
-						for (char& c : base_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, base_str);
-					started = true;
-				}
-				else if ((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP))
-				{
-					if (m_disassembly_options.lowerCase)
-						result.emplace_back(TextToken, "rel ");
-					else
-						result.emplace_back(TextToken, "REL ");
-
-					if (xed_operand_values_has_memory_displacement(ov))
-						disp += addr + len;
-					else
-						disp = addr + len;
-
-					stringstream sstream;
-					if (m_disassembly_options.lowerCase)
-						sstream << "0x" << hex << nouppercase << disp;
-					else
-						sstream << "0x" << hex << uppercase << disp;
-
-					result.emplace_back(CodeRelativeAddressToken, sstream.str(), disp, GetAddressSize());
-
-					result.emplace_back(EndMemoryOperandToken, "]");
-					break;
-				}
-
-				const xed_reg_enum_t index = xed_decoded_inst_get_index_reg(xedd, 0);
-				if (index != XED_REG_INVALID)
-				{
-					if (xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_INDEX_REG_IS_POINTER))
-					{
-						// MPX BNDLDX/BNDSTX instr are unusual in that they use
-						// the index reg as distinct operand.
-						extra_index_operand = index;
-					}
-					else  // normal path
-					{
-						if (started)
-							result.emplace_back(TextToken, "+");
-						started = true;
-
-						string index_str(xed_reg_enum_t2str(index));
-						if (m_disassembly_options.lowerCase)
-							for (char& c : index_str)
-								c = tolower(c);
-
-						result.emplace_back(RegisterToken, index_str);
-
-						const unsigned int scale = xed_decoded_inst_get_scale(xedd, 0);
-						if (scale != 1)
-						{
-							result.emplace_back(TextToken, "*");
-							stringstream sstream;
-							sstream << scale;
-							result.emplace_back(IntegerToken, sstream.str(), scale, 1);
-						}
-					}
-				}
-
-				const unsigned short disp_bytes = xed_decoded_inst_get_memory_displacement_width_bits(xedd, 0) / 8;
-
-				if (xed_operand_values_has_memory_displacement(ov) &&
-					((disp != 0) || (!started && validSegment)))
-				{
-					stringstream sstream;
-					sstream << "0x" << hex;
-					if (m_disassembly_options.lowerCase)
-						sstream << nouppercase;
-					else
-						sstream << uppercase;
-
-					if (started)
-					{
-						if (disp < 0)
-						{
-							result.emplace_back(TextToken, "-");
-							disp = -disp;
-						}
-						else
-							result.emplace_back(TextToken, "+");
-
-						if (disp_bytes == 2)
-							sstream << (uint16_t)disp;
-						else if (disp_bytes == 4)
-							sstream << (uint32_t)disp;
-						else if (disp_bytes == 8)
-							sstream << (uint64_t)disp;
-						else
-							sstream << disp;
-						result.emplace_back(IntegerToken, sstream.str(), disp, disp_bytes);
-					}
-					else
-					{
-						sstream << disp;
-
-						if (validSegment)
-							result.emplace_back(IntegerToken, sstream.str(), disp, GetAddressSize());
-						else
-							result.emplace_back(PossibleAddressToken, sstream.str(), disp, GetAddressSize());
-					}
-				}
-				else if (xed_operand_values_has_memory_displacement(ov) &&
-					((disp == 0) && (!started)))
-				{
-					result.emplace_back(IntegerToken, "0x0", disp, GetAddressSize());
-				}
-
-				result.emplace_back(EndMemoryOperandToken, "]");
-
-				break;
-			}
-			case XED_OPERAND_MEM1:
-			{
-
-
-				// Segment
-				const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 1);
-				if (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 1))
-				{
-					string seg_str(xed_reg_enum_t2str(seg));
-					if (m_disassembly_options.lowerCase)
-						for (char& c : seg_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, seg_str);
-
-					result.emplace_back(TextToken, ":");
-				}
-
-				result.emplace_back(TextToken, "[");
-				const xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 1);
-				if (base != XED_REG_INVALID)
-				{
-					string base_str(xed_reg_enum_t2str(base));
-					if (m_disassembly_options.lowerCase)
-						for (char& c : base_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, base_str);
-				}
-				result.emplace_back(EndMemoryOperandToken, "]");
-
-				break;
-			}
-			case XED_OPERAND_IMM0:
-			{
-				const size_t            addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
- 				const unsigned int immediateSize = xed_decoded_inst_get_operand_width(xedd) / 8;
-
-				stringstream sstream;
-				sstream << "0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				if (xed_decoded_inst_get_immediate_is_signed(xedd)  && (immediateSize != 1))
-				{
-					const int64_t immediateValue = xed_decoded_inst_get_signed_immediate(xedd);
-
-					if (immediateValue >= 0)
-						sstream << immediateValue;  // Don't zero extend
-					else
-					{
-						// I'm not proud of this switch statement... It was the product of a lot of pain.
-						switch (immediateSize)  // For sign extentions
-						{
-						case 1:
-							sstream << (int8_t)immediateValue;
-							break;
-						case 2:
-							sstream << (int16_t)immediateValue;
-							break;
-						case 4:
-							sstream << (int32_t)immediateValue;
-							break;
-						default:
-							sstream << (int64_t)immediateValue;
-						}
-					}
-
-					if (immediateSize == addrSize)
-						result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
-					else
-						result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
-				}
-				else
-				{
-					const uint64_t immediateValue = xed_decoded_inst_get_unsigned_immediate(xedd);
-					sstream << immediateValue;
-					if (immediateSize == addrSize)
-						result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
-					else
-						result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
-				}
-				break;
-			}
-			case XED_OPERAND_IMM1:  // The ENTER instruction
-			{
-				stringstream sstream;
-				sstream << "0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << (uint16_t)xed_decoded_inst_get_second_immediate(xedd);
-				result.emplace_back(IntegerToken, sstream.str(), xed_decoded_inst_get_second_immediate(xedd), 1);
-				break;
-			}
-			case XED_OPERAND_PTR:
-			{
-				stringstream sstream;
-				sstream << "0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << xed_decoded_inst_get_branch_displacement(xedd);
-				result.emplace_back(PossibleAddressToken, sstream.str(), xed_decoded_inst_get_branch_displacement(xedd), 8);
-				break;
-			}
-			case XED_OPERAND_RELBR:
-			{
-				const int64_t relbr = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
-
-				stringstream sstream;
-				if ((xed_decoded_inst_get_iclass(xedd) == XED_ICLASS_CALL_NEAR) && (relbr == (int64_t)(addr + xed_decoded_inst_get_length(xedd))))
-				{
-					sstream << "$+" << xed_decoded_inst_get_length(xedd);
-					result.emplace_back(TextToken, sstream.str());
-					break;
-				}
-
-				sstream << "0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << relbr;
-				result.emplace_back(CodeRelativeAddressToken, sstream.str(), relbr, 8);
-				break;
-			}
-			default:
-			{
-				if (m_disassembly_options.lowerCase)
-					result.emplace_back(TextToken, "unimplimented ");
-				else
-					result.emplace_back(TextToken, "UNIMPLIMENTED ");
-			}  // default case of outer switch
-			}  // outer switch
-
-			// If there is another operand and it is visable, print delimiter
-			if ((opIndex != xed_inst_noperands(xi)-1) &&
-				((xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_EXPLICIT) ||
-				 ((xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_IMPLICIT) &&
-				  (xed_decoded_inst_get_reg(xedd, xed_operand_name(xed_inst_operand(xi, opIndex+1))) != XED_REG_ST0))))
-					result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
-		}
-
-		if (extra_index_operand != XED_REG_INVALID)
-		{
-			result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
-			string reg = xed_reg_enum_t2str(extra_index_operand);
-			if (m_disassembly_options.lowerCase)
-				for (char& c : reg)
-					c = tolower(c);
-			result.emplace_back(RegisterToken, reg);
-		}
-	}
-
-	void GetOperandTextATT(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t len, const xed_operand_values_t* const ov, const xed_inst_t* const xi, vector<InstructionTextToken>& result) const
-	{
-		unsigned i,j;
-		unsigned noperands = xed_inst_noperands(xi);
-
-		bool intel_way = false;
-
-		if (xed_inst_get_attribute(xi, XED_ATTRIBUTE_ATT_OPERAND_ORDER_EXCEPTION))
-			intel_way = true;
-
-		// if (xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_INDEX_REG_IS_POINTER))
-		// {
-		// 	for(j=0; j<noperands; ++j)
-		// 	{
-		// 		i = noperands - j - 1;  // never intel_way
-
-		// 		if(xed_operand_name(xed_inst_operand(xi,i)) == XED_OPERAND_MEM0)
-		// 			cout << "%" + xed_reg_enum_t2str(xed3_operand_get_index(xedd));
-		// 	}
-		// }
-
-		for(j=0; j<noperands; ++j)
-		{
-			if (intel_way)
-				i = j;
 			else
-				i = noperands - j - 1;
+				continue;
+		}
 
-			const xed_operand_t*          op = xed_inst_operand(xi, i);
-			const xed_operand_enum_t op_name = xed_operand_name(op);
+		switch(op_name)
+		{
+		case XED_OPERAND_REG0:
+		case XED_OPERAND_REG1:
+		case XED_OPERAND_REG2:
+		case XED_OPERAND_REG3:
+		case XED_OPERAND_REG4:
+		case XED_OPERAND_REG5:
+		case XED_OPERAND_REG6:
+		case XED_OPERAND_REG7:
+		case XED_OPERAND_REG8:
+		{
+			string reg = "";
 
-			// XED's suppressed operands shouln't be represented in Intel syntax
-			if (xed_operand_operand_visibility(op) == XED_OPVIS_SUPPRESSED)
+			const xed_reg_enum_t xedReg = xed_decoded_inst_get_reg(xedd, op_name);
+			if ((xedReg >= XED_REG_X87_FIRST) && (xedReg <=  XED_REG_X87_LAST))
 			{
-				if ((xed_decoded_inst_get_category(xedd) == XED_CATEGORY_STRINGOP) &&
-					(op_name == XED_OPERAND_MEM0 || op_name == XED_OPERAND_MEM1))
-				{
-					if (op_name == XED_OPERAND_MEM1)
-						result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
-				}
-				else
-				{
-					continue;
-				}
+				reg += "ST";
+				reg += ('0' + (xedReg-XED_REG_X87_FIRST));
+			}
+			else
+			{
+				reg += xed_reg_enum_t2str(xedReg);
+			}
+			if (m_disassembly_options.lowerCase)
+				for (char& c : reg)
+					c = tolower(c);
+			result.emplace_back(RegisterToken, reg);
+			break;
+		}
+		case XED_OPERAND_AGEN:
+		case XED_OPERAND_MEM0:
+		{
+			GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, opIndex) / 8, result, m_disassembly_options.lowerCase);
+
+			if (m_disassembly_options.lowerCase)
+				result.emplace_back(TextToken, "ptr ");
+			else
+				result.emplace_back(TextToken, "PTR ");
+			result.emplace_back(TextToken, "[");
+
+			// Segment
+			const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 0);
+			const bool validSegment = (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 0));
+			if (validSegment)
+			{
+				string seg_str(xed_reg_enum_t2str(seg));
+				if (m_disassembly_options.lowerCase)
+					for (char& c : seg_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, seg_str);
+				result.emplace_back(TextToken, ":");
 			}
 
-			switch(xed_operand_name(op))
-			{
-			case XED_OPERAND_REG0:
-			case XED_OPERAND_REG1:
-			case XED_OPERAND_REG2:
-			case XED_OPERAND_REG3:
-			case XED_OPERAND_REG4:
-			case XED_OPERAND_REG5:
-			case XED_OPERAND_REG6:
-			case XED_OPERAND_REG7:
-			case XED_OPERAND_REG8:
-			{
-				string reg = "%";
+			bool started = false;
+			const xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 0);
 
-				const xed_reg_enum_t xedReg = xed_decoded_inst_get_reg(xedd, op_name);
-				if ((xedReg >= XED_REG_X87_FIRST) && (xedReg <=  XED_REG_X87_LAST))
-				{
-					reg += "ST";
-					reg += ('0' + (xedReg-XED_REG_X87_FIRST));
-				}
-				else
-				{
-					reg += xed_reg_enum_t2str(xedReg);
-				}
+			int64_t disp = xed_decoded_inst_get_memory_displacement(xedd, 0);
+
+			if ((base != XED_REG_INVALID) && !((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP)))
+			{
+				string base_str(xed_reg_enum_t2str(base));
 				if (m_disassembly_options.lowerCase)
-					for (char& c : reg)
+					for (char& c : base_str)
 						c = tolower(c);
-				result.emplace_back(RegisterToken, reg);
+				result.emplace_back(RegisterToken, base_str);
+				started = true;
+			}
+			else if ((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP))
+			{
+				if (xed_operand_values_has_memory_displacement(ov))
+					disp += addr + len;
+				else
+					disp = addr + len;
+
+				stringstream sstream;
+				if (m_disassembly_options.lowerCase)
+					sstream << "0x" << hex << nouppercase << disp;
+				else
+					sstream << "0x" << hex << uppercase << disp;
+
+				result.emplace_back(CodeRelativeAddressToken, sstream.str(), disp, GetAddressSize());
+
+				result.emplace_back(EndMemoryOperandToken, "]");
 				break;
 			}
-			case XED_OPERAND_AGEN:
-			case XED_OPERAND_MEM0:
+
+			const xed_reg_enum_t index = xed_decoded_inst_get_index_reg(xedd, 0);
+			if (index != XED_REG_INVALID)
 			{
-				GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, i) / 8, result, m_disassembly_options.lowerCase);
-
-				if (m_disassembly_options.lowerCase)
-					result.emplace_back(TextToken, "ptr ");
-				else
-					result.emplace_back(TextToken, "PTR ");
-				result.emplace_back(TextToken, "[");
-
-				// Segment
-				const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 0);
-				const bool validSegment = (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 0));
-				if (validSegment)
+				if (xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_INDEX_REG_IS_POINTER))
 				{
-					string seg_str(xed_reg_enum_t2str(seg));
-					seg_str = "%" + seg_str;
-					if (m_disassembly_options.lowerCase)
-						for (char& c : seg_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, seg_str);
-					result.emplace_back(TextToken, ":");
+					// MPX BNDLDX/BNDSTX instr are unusual in that they use
+					// the index reg as distinct operand.
+					extra_index_operand = index;
 				}
-
-				bool started = false;
-				xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 0);
-
-				int64_t disp = xed_decoded_inst_get_memory_displacement(xedd, 0);
-
-				if ((base != XED_REG_INVALID) && !((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP)))
-				{
-					string base_str(xed_reg_enum_t2str(base));
-					base_str = "%" + base_str;
-					if (m_disassembly_options.lowerCase)
-						for (char& c : base_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, base_str);
-					started = true;
-				}
-				else if ((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP))
-				{
-					if (xed_operand_values_has_memory_displacement(ov))
-						disp += addr + len;
-					else
-						disp = addr + len;
-
-					stringstream sstream;
-					if (m_disassembly_options.lowerCase)
-						sstream << "0x" << hex << nouppercase << disp;
-					else
-						sstream << "0x" << hex << uppercase << disp;
-
-					result.emplace_back(CodeRelativeAddressToken, sstream.str(), disp, GetAddressSize());
-
-					result.emplace_back(EndMemoryOperandToken, "]");
-					break;
-				}
-
-				const xed_reg_enum_t index = xed_decoded_inst_get_index_reg(xedd, 0);
-				if (index != XED_REG_INVALID)
+				else  // normal path
 				{
 					if (started)
 						result.emplace_back(TextToken, "+");
 					started = true;
 
 					string index_str(xed_reg_enum_t2str(index));
-					index_str = "%" + index_str;
 					if (m_disassembly_options.lowerCase)
 						for (char& c : index_str)
 							c = tolower(c);
@@ -1636,1223 +881,1865 @@ protected:
 						result.emplace_back(IntegerToken, sstream.str(), scale, 1);
 					}
 				}
+			}
 
-				const unsigned short disp_bytes = xed_decoded_inst_get_memory_displacement_width_bits(xedd, 0) / 8;
+			const unsigned short disp_bytes = xed_decoded_inst_get_memory_displacement_width_bits(xedd, 0) / 8;
 
-				if (xed_operand_values_has_memory_displacement(ov) &&
-					((disp != 0) || (!started && validSegment)))
+			if (xed_operand_values_has_memory_displacement(ov) &&
+				((disp != 0) || (!started && validSegment)))
+			{
+				stringstream sstream;
+				sstream << "0x" << hex;
+				if (m_disassembly_options.lowerCase)
+					sstream << nouppercase;
+				else
+					sstream << uppercase;
+
+				if (started)
 				{
-					stringstream sstream;
-					sstream << "0x" << hex;
-					if (m_disassembly_options.lowerCase)
-						sstream << nouppercase;
-					else
-						sstream << uppercase;
-
-					if (started)
+					if (disp < 0)
 					{
-						if (disp < 0)
-						{
-							result.emplace_back(TextToken, "-");
-							disp = -disp;
-						}
-						else
-							result.emplace_back(TextToken, "+");
-
-						if (disp_bytes == 2)
-							sstream << (uint16_t)disp;
-						else if (disp_bytes == 4)
-							sstream << (uint32_t)disp;
-						else if (disp_bytes == 8)
-							sstream << (uint64_t)disp;
-						else
-							sstream << disp;
-						result.emplace_back(IntegerToken, sstream.str(), disp, disp_bytes);
+						result.emplace_back(TextToken, "-");
+						disp = -disp;
 					}
 					else
-					{
+						result.emplace_back(TextToken, "+");
+
+					if (disp_bytes == 2)
+						sstream << (uint16_t)disp;
+					else if (disp_bytes == 4)
+						sstream << (uint32_t)disp;
+					else if (disp_bytes == 8)
+						sstream << (uint64_t)disp;
+					else
 						sstream << disp;
-
-						if (validSegment)
-							result.emplace_back(IntegerToken, sstream.str(), disp, GetAddressSize());
-						else
-							result.emplace_back(PossibleAddressToken, sstream.str(), disp, GetAddressSize());
-					}
+					result.emplace_back(IntegerToken, sstream.str(), disp, disp_bytes);
 				}
-				else if (xed_operand_values_has_memory_displacement(ov) &&
-					((disp == 0) && (!started)))
-				{
-					result.emplace_back(IntegerToken, "0x0", disp, GetAddressSize());
-				}
-				result.emplace_back(EndMemoryOperandToken, "]");
-
-				break;
-			}
-
-			case XED_OPERAND_MEM1:
-			{
-				GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, i) / 8, result, m_disassembly_options.lowerCase);
-
-				if (m_disassembly_options.lowerCase)
-					result.emplace_back(TextToken, "ptr ");
 				else
-					result.emplace_back(TextToken, "PTR ");
-
-				// Segment
-				const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 1);
-				if (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 1))
 				{
-					string seg_str(xed_reg_enum_t2str(seg));
-					seg_str = "%" + seg_str;
-					if (m_disassembly_options.lowerCase)
-						for (char& c : seg_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, seg_str);
+					sstream << disp;
 
-					result.emplace_back(TextToken, ":");
-				}
-
-				result.emplace_back(TextToken, "[");
-				const xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 1);
-				if (base != XED_REG_INVALID)
-				{
-					string base_str(xed_reg_enum_t2str(base));
-					base_str = "%" + base_str;
-					if (m_disassembly_options.lowerCase)
-						for (char& c : base_str)
-							c = tolower(c);
-					result.emplace_back(RegisterToken, base_str);
-				}
-				result.emplace_back(EndMemoryOperandToken, "]");
-
-				break;
-			}
-
-			case XED_OPERAND_IMM0:
-			{
-				const size_t            addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
- 				const unsigned int immediateSize = xed_decoded_inst_get_operand_width(xedd) / 8;
-
-				stringstream sstream;
-				sstream << "$0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				if (xed_decoded_inst_get_immediate_is_signed(xedd) && (immediateSize != 1))
-				{
-					const int64_t immediateValue = xed_decoded_inst_get_signed_immediate(xedd);
-
-					if (immediateValue >= 0)
-						sstream << immediateValue;  // Don't zero extend
+					if (validSegment)
+						result.emplace_back(IntegerToken, sstream.str(), disp, GetAddressSize());
 					else
+						result.emplace_back(PossibleAddressToken, sstream.str(), disp, GetAddressSize());
+				}
+			}
+			else if (xed_operand_values_has_memory_displacement(ov) &&
+				((disp == 0) && (!started)))
+			{
+				result.emplace_back(IntegerToken, "0x0", disp, GetAddressSize());
+			}
+			result.emplace_back(EndMemoryOperandToken, "]");
+
+			break;
+		}
+		case XED_OPERAND_MEM1:
+		{
+			GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, opIndex) / 8, result, m_disassembly_options.lowerCase);
+
+			if (m_disassembly_options.lowerCase)
+				result.emplace_back(TextToken, "ptr ");
+			else
+				result.emplace_back(TextToken, "PTR ");
+
+			// Segment
+			const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 1);
+			if (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 1))
+			{
+				string seg_str(xed_reg_enum_t2str(seg));
+				if (m_disassembly_options.lowerCase)
+					for (char& c : seg_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, seg_str);
+
+				result.emplace_back(TextToken, ":");
+			}
+
+			result.emplace_back(TextToken, "[");
+			const xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 1);
+			if (base != XED_REG_INVALID)
+			{
+				string base_str(xed_reg_enum_t2str(base));
+				if (m_disassembly_options.lowerCase)
+					for (char& c : base_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, base_str);
+			}
+			result.emplace_back(EndMemoryOperandToken, "]");
+
+			break;
+		}
+		case XED_OPERAND_IMM0:
+		{
+			const size_t            addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
+			const unsigned int immediateSize = xed_decoded_inst_get_operand_width(xedd) / 8;
+
+			stringstream sstream;
+			sstream << "0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			if (xed_decoded_inst_get_immediate_is_signed(xedd) && (immediateSize != 1))
+			{
+				const int64_t immediateValue = xed_decoded_inst_get_signed_immediate(xedd);
+
+				if (immediateValue >= 0)
+					sstream << immediateValue;  // Don't zero extend
+				else
+				{
+					// I'm not proud of this switch statement... It was the product of a lot of pain.
+					switch (immediateSize)  // For sign extentions
 					{
-						// I'm not proud of this switch statement... It was the product of a lot of pain.
-						switch (immediateSize)  // For sign extentions
-						{
-						case 1:
-							sstream << (int8_t)immediateValue;
-							break;
-						case 2:
-							sstream << (int16_t)immediateValue;
-							break;
-						case 4:
-							sstream << (int32_t)immediateValue;
-							break;
-						default:
-							sstream << (int64_t)immediateValue;
-						}
+					case 1:
+						sstream << (int8_t)immediateValue;
+						break;
+					case 2:
+						sstream << (int16_t)immediateValue;
+						break;
+					case 4:
+						sstream << (int32_t)immediateValue;
+						break;
+					default:
+						sstream << (int64_t)immediateValue;
 					}
-
-					if (immediateSize == addrSize)
-						result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
-					else
-						result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
 				}
+
+				if (immediateSize == addrSize)
+					result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
 				else
-				{
-					const uint64_t immediateValue = xed_decoded_inst_get_unsigned_immediate(xedd);
-					sstream << immediateValue;
-					if (immediateSize == addrSize)
-						result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
-					else
-						result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
-				}
-				break;
-			}
-
-			case XED_OPERAND_IMM1:
-			{
-				stringstream sstream;
-				sstream << "$0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << (uint16_t)xed_decoded_inst_get_second_immediate(xedd);
-				result.emplace_back(IntegerToken, sstream.str(), xed_decoded_inst_get_second_immediate(xedd), 1);
-				break;
-			}
-
-			case XED_OPERAND_PTR:
-			{
-				stringstream sstream;
-				sstream << "$0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << xed_decoded_inst_get_branch_displacement(xedd);
-				result.emplace_back(PossibleAddressToken, sstream.str(), xed_decoded_inst_get_branch_displacement(xedd), 8);
-				break;
-
-			}
-
-			case XED_OPERAND_RELBR:
-			{
-				const int64_t relbr = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
-
-				stringstream sstream;
-				sstream << "$0x" << hex;
-				if (m_disassembly_options.lowerCase)
-					sstream << nouppercase;
-				else
-					sstream << uppercase;
-
-				sstream << relbr;
-				result.emplace_back(CodeRelativeAddressToken, sstream.str(), relbr, 8);
-				break;
-			}
-
-			default:
-			{
-				result.emplace_back(TextToken, "unimplimented");
-			}  // default case of outer switch
-			}  // outer switch
-
-			// If there is another operand and it is visable, print delimiter
-			if (intel_way)
-			{
-				if ((i != (size_t)xed_inst_noperands(xi)-1) &&
-					((xed_operand_operand_visibility(xed_inst_operand(xi, i+1)) == XED_OPVIS_EXPLICIT) ||
-					(xed_operand_operand_visibility(xed_inst_operand(xi, i+1)) == XED_OPVIS_IMPLICIT)))
-				{
-						result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
-				}
+					result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
 			}
 			else
 			{
-				if ((i != 0) &&
-					((xed_operand_operand_visibility(xed_inst_operand(xi, noperands - j - 2)) == XED_OPVIS_EXPLICIT) ||
-					(xed_operand_operand_visibility(xed_inst_operand(xi, noperands - j - 2)) == XED_OPVIS_IMPLICIT)))
+				const uint64_t immediateValue = xed_decoded_inst_get_unsigned_immediate(xedd);
+				sstream << immediateValue;
+				if (immediateSize == addrSize)
+					result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
+				else
+					result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
+			}
+			break;
+		}
+		case XED_OPERAND_IMM1:  // The ENTER instruction
+		{
+			stringstream sstream;
+			sstream << "0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << (uint16_t)xed_decoded_inst_get_second_immediate(xedd);
+			result.emplace_back(IntegerToken, sstream.str(), xed_decoded_inst_get_second_immediate(xedd), 1);
+			break;
+		}
+		case XED_OPERAND_PTR:  // TODO...remove?
+		{
+			stringstream sstream;
+			sstream << "0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << xed_decoded_inst_get_branch_displacement(xedd);
+			result.emplace_back(PossibleAddressToken, sstream.str(), xed_decoded_inst_get_branch_displacement(xedd), 8);
+			break;
+		}
+		case XED_OPERAND_RELBR:
+		{
+			const int64_t relbr = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
+
+			stringstream sstream;
+			sstream << "0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << relbr;
+			result.emplace_back(CodeRelativeAddressToken, sstream.str(), relbr, 8);
+			break;
+		}
+		default:
+		{
+			result.emplace_back(TextToken, "unimplimented");
+		}  // default case of outer switch
+		}  // outer switch
+
+		// If there is another operand and it is visable, print delimiter
+		if ((opIndex != xed_inst_noperands(xi)-1) &&
+			((xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_EXPLICIT) ||
+			(xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_IMPLICIT)))
+				result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
+	}
+
+	if (extra_index_operand != XED_REG_INVALID)
+	{
+		result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
+		string reg = xed_reg_enum_t2str(extra_index_operand);
+		if (m_disassembly_options.lowerCase)
+			for (char& c : reg)
+				c = tolower(c);
+		result.emplace_back(RegisterToken, reg);
+	}
+}
+
+// The syntax used by asmx86, that users are used to (also the only one that should be garenteed to roundtrip with asm)
+void X86CommonArchitecture::GetOperandTextBNIntel(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t len, const xed_operand_values_t* const ov, const xed_inst_t* const xi, vector<InstructionTextToken>& result) const
+{
+	xed_reg_enum_t extra_index_operand = XED_REG_INVALID;
+
+	// Get operands
+	for (unsigned int opIndex = 0; opIndex < xed_inst_noperands(xi); ++opIndex)
+	{
+		const xed_operand_t*          op = xed_inst_operand(xi, opIndex);
+		const xed_operand_enum_t op_name = xed_operand_name(op);
+
+		// XED's suppressed operands shouln't be represented in Intel syntax
+		if (xed_operand_operand_visibility(op) == XED_OPVIS_SUPPRESSED)
+		{
+			if ((xed_decoded_inst_get_category(xedd) == XED_CATEGORY_STRINGOP) &&
+				(op_name == XED_OPERAND_MEM0 || op_name == XED_OPERAND_MEM1))
+			{
+				if (op_name == XED_OPERAND_MEM1)
+					result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
+			}
+			else
+				continue;
+		}
+
+		if ((xed_operand_operand_visibility(op) == XED_OPVIS_IMPLICIT) && (xed_decoded_inst_get_reg(xedd, op_name) == XED_REG_ST0))
+			continue;
+
+		switch(op_name)
+		{
+		case XED_OPERAND_REG0:
+		case XED_OPERAND_REG1:
+		case XED_OPERAND_REG2:
+		case XED_OPERAND_REG3:
+		case XED_OPERAND_REG4:
+		case XED_OPERAND_REG5:
+		case XED_OPERAND_REG6:
+		case XED_OPERAND_REG7:
+		case XED_OPERAND_REG8:
+		{
+			string reg = "";
+
+			const xed_reg_enum_t xedReg = xed_decoded_inst_get_reg(xedd, op_name);
+			if ((xedReg >= XED_REG_X87_FIRST) && (xedReg <=  XED_REG_X87_LAST))
+			{
+				reg += "ST";
+				reg += ('0' + (xedReg - XED_REG_X87_FIRST));
+			}
+			// As of July 2020, the XED now outputs these registers as mm0, etc.
+			// However, to maintain backward-compatibility, we need to make them mmx0, etc,
+			// as they previously are
+			else if ((xedReg >= XED_REG_MMX0) && (xedReg <=  XED_REG_MMX1))
+			{
+				reg += "MMX";
+				reg += ('0' + (xedReg - XED_REG_MMX0));
+			}
+			else
+			{
+				reg += xed_reg_enum_t2str(xedReg);
+			}
+
+			if (m_disassembly_options.lowerCase)
+				for (char& c : reg)
+					c = tolower(c);
+
+			result.emplace_back(RegisterToken, reg);
+
+			// handle the {z} modifier
+			if (XED_REG_K1 <= xedReg && xedReg <= XED_REG_K7)
+			{
+				if(xed_decoded_inst_zeroing(xedd))
 				{
-						result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
+					if (m_disassembly_options.lowerCase)
+						result.emplace_back(TextToken, " {z}");
+					else
+						result.emplace_back(TextToken, " {Z}");
 				}
 			}
 
+			break;
 		}
-	}
-
-	void GetOperandTextXED(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t, const xed_operand_values_t* const, const xed_inst_t* const, vector<InstructionTextToken>& result) const
-	{
-		char out_buffer[100];
-		if (!xed_format_context(XED_SYNTAX_XED, xedd, out_buffer, 100, addr, 0, 0))
+		case XED_OPERAND_AGEN:
+		case XED_OPERAND_MEM0:
 		{
-			LogError("Can't disassemble");
-			return;
-		}
+			// Size
+			if (xed_inst_iclass(xi) != XED_ICLASS_LEA)
+				GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, opIndex) / 8, result, m_disassembly_options.lowerCase);
 
-		// Find space
-		int i = 0;
-		for (; ; ++i)
-			if ((out_buffer[i] == ' ') && (out_buffer[i+1] != ' '))
+			result.emplace_back(TextToken, "[");
+			// Segment
+			const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 0);
+			const bool validSegment = (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 0));
+			if (validSegment)
+			{
+				string seg_str(xed_reg_enum_t2str(seg));
+				if (m_disassembly_options.lowerCase)
+					for (char& c : seg_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, seg_str);
+				result.emplace_back(TextToken, ":");
+			}
+
+			bool started = false;
+			xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 0);
+
+			int64_t disp = xed_decoded_inst_get_memory_displacement(xedd, 0);
+
+			if ((base != XED_REG_INVALID) && !((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP)))
+			{
+				string base_str(xed_reg_enum_t2str(base));
+				if (m_disassembly_options.lowerCase)
+					for (char& c : base_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, base_str);
+				started = true;
+			}
+			else if ((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP))
+			{
+				if (m_disassembly_options.lowerCase)
+					result.emplace_back(TextToken, "rel ");
+				else
+					result.emplace_back(TextToken, "REL ");
+
+				if (xed_operand_values_has_memory_displacement(ov))
+					disp += addr + len;
+				else
+					disp = addr + len;
+
+				stringstream sstream;
+				if (m_disassembly_options.lowerCase)
+					sstream << "0x" << hex << nouppercase << disp;
+				else
+					sstream << "0x" << hex << uppercase << disp;
+
+				result.emplace_back(CodeRelativeAddressToken, sstream.str(), disp, GetAddressSize());
+
+				result.emplace_back(EndMemoryOperandToken, "]");
 				break;
+			}
 
-		// Convert To String
-		string outstring(out_buffer+i);
+			const xed_reg_enum_t index = xed_decoded_inst_get_index_reg(xedd, 0);
+			if (index != XED_REG_INVALID)
+			{
+				if (xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_INDEX_REG_IS_POINTER))
+				{
+					// MPX BNDLDX/BNDSTX instr are unusual in that they use
+					// the index reg as distinct operand.
+					extra_index_operand = index;
+				}
+				else  // normal path
+				{
+					if (started)
+						result.emplace_back(TextToken, "+");
+					started = true;
 
-		result.emplace_back(TextToken, outstring);
-	}
+					string index_str(xed_reg_enum_t2str(index));
+					if (m_disassembly_options.lowerCase)
+						for (char& c : index_str)
+							c = tolower(c);
 
-	void GetOperandText(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t len, const xed_operand_values_t* const ov, const xed_inst_t* const xi, vector<InstructionTextToken>& result) const
-	{
-		switch (m_disassembly_options.df)
-		{
-		case DF_INTEL:
-			GetOperandTextIntel(xedd, addr, len, ov, xi, result);
+					result.emplace_back(RegisterToken, index_str);
+
+					const unsigned int scale = xed_decoded_inst_get_scale(xedd, 0);
+					if (scale != 1)
+					{
+						result.emplace_back(TextToken, "*");
+						stringstream sstream;
+						sstream << scale;
+						result.emplace_back(IntegerToken, sstream.str(), scale, 1);
+					}
+				}
+			}
+
+			const unsigned short disp_bytes = xed_decoded_inst_get_memory_displacement_width_bits(xedd, 0) / 8;
+
+			if (xed_operand_values_has_memory_displacement(ov) &&
+				((disp != 0) || (!started && validSegment)))
+			{
+				stringstream sstream;
+				sstream << "0x" << hex;
+				if (m_disassembly_options.lowerCase)
+					sstream << nouppercase;
+				else
+					sstream << uppercase;
+
+				if (started)
+				{
+					if (disp < 0)
+					{
+						result.emplace_back(TextToken, "-");
+						disp = -disp;
+					}
+					else
+						result.emplace_back(TextToken, "+");
+
+					if (disp_bytes == 2)
+						sstream << (uint16_t)disp;
+					else if (disp_bytes == 4)
+						sstream << (uint32_t)disp;
+					else if (disp_bytes == 8)
+						sstream << (uint64_t)disp;
+					else
+						sstream << disp;
+					result.emplace_back(IntegerToken, sstream.str(), disp, disp_bytes);
+				}
+				else
+				{
+					sstream << disp;
+
+					if (validSegment)
+						result.emplace_back(IntegerToken, sstream.str(), disp, GetAddressSize());
+					else
+						result.emplace_back(PossibleAddressToken, sstream.str(), disp, GetAddressSize());
+				}
+			}
+			else if (xed_operand_values_has_memory_displacement(ov) &&
+				((disp == 0) && (!started)))
+			{
+				result.emplace_back(IntegerToken, "0x0", disp, GetAddressSize());
+			}
+
+			result.emplace_back(EndMemoryOperandToken, "]");
+
 			break;
-
-    	case DF_BN_INTEL:
-			GetOperandTextBNIntel(xedd, addr, len, ov, xi, result);
-			break;
-
-		case DF_ATT:
-			GetOperandTextATT(xedd, addr, len, ov, xi, result);
-			break;
-
-		case DF_XED:
-			GetOperandTextXED(xedd, addr, len, ov, xi, result);
-			break;
-
-		default:
-			LogError("Invalid Disassembly Flavor");
 		}
+		case XED_OPERAND_MEM1:
+		{
+
+
+			// Segment
+			const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 1);
+			if (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 1))
+			{
+				string seg_str(xed_reg_enum_t2str(seg));
+				if (m_disassembly_options.lowerCase)
+					for (char& c : seg_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, seg_str);
+
+				result.emplace_back(TextToken, ":");
+			}
+
+			result.emplace_back(TextToken, "[");
+			const xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 1);
+			if (base != XED_REG_INVALID)
+			{
+				string base_str(xed_reg_enum_t2str(base));
+				if (m_disassembly_options.lowerCase)
+					for (char& c : base_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, base_str);
+			}
+			result.emplace_back(EndMemoryOperandToken, "]");
+
+			break;
+		}
+		case XED_OPERAND_IMM0:
+		{
+			const size_t            addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
+			const unsigned int immediateSize = xed_decoded_inst_get_operand_width(xedd) / 8;
+
+			stringstream sstream;
+			sstream << "0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			if (xed_decoded_inst_get_immediate_is_signed(xedd)  && (immediateSize != 1))
+			{
+				const int64_t immediateValue = xed_decoded_inst_get_signed_immediate(xedd);
+
+				if (immediateValue >= 0)
+					sstream << immediateValue;  // Don't zero extend
+				else
+				{
+					// I'm not proud of this switch statement... It was the product of a lot of pain.
+					switch (immediateSize)  // For sign extentions
+					{
+					case 1:
+						sstream << (int8_t)immediateValue;
+						break;
+					case 2:
+						sstream << (int16_t)immediateValue;
+						break;
+					case 4:
+						sstream << (int32_t)immediateValue;
+						break;
+					default:
+						sstream << (int64_t)immediateValue;
+					}
+				}
+
+				if (immediateSize == addrSize)
+					result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
+				else
+					result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
+			}
+			else
+			{
+				const uint64_t immediateValue = xed_decoded_inst_get_unsigned_immediate(xedd);
+				sstream << immediateValue;
+				if (immediateSize == addrSize)
+					result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
+				else
+					result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
+			}
+			break;
+		}
+		case XED_OPERAND_IMM1:  // The ENTER instruction
+		{
+			stringstream sstream;
+			sstream << "0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << (uint16_t)xed_decoded_inst_get_second_immediate(xedd);
+			result.emplace_back(IntegerToken, sstream.str(), xed_decoded_inst_get_second_immediate(xedd), 1);
+			break;
+		}
+		case XED_OPERAND_PTR:
+		{
+			stringstream sstream;
+			sstream << "0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << xed_decoded_inst_get_branch_displacement(xedd);
+			result.emplace_back(PossibleAddressToken, sstream.str(), xed_decoded_inst_get_branch_displacement(xedd), 8);
+			break;
+		}
+		case XED_OPERAND_RELBR:
+		{
+			const int64_t relbr = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
+
+			stringstream sstream;
+			if ((xed_decoded_inst_get_iclass(xedd) == XED_ICLASS_CALL_NEAR) && (relbr == (int64_t)(addr + xed_decoded_inst_get_length(xedd))))
+			{
+				sstream << "$+" << xed_decoded_inst_get_length(xedd);
+				result.emplace_back(TextToken, sstream.str());
+				break;
+			}
+
+			sstream << "0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << relbr;
+			result.emplace_back(CodeRelativeAddressToken, sstream.str(), relbr, 8);
+			break;
+		}
+		default:
+		{
+			if (m_disassembly_options.lowerCase)
+				result.emplace_back(TextToken, "unimplimented ");
+			else
+				result.emplace_back(TextToken, "UNIMPLIMENTED ");
+		}  // default case of outer switch
+		}  // outer switch
+
+		// If there is another operand and it is visable, print delimiter
+		if ((opIndex != xed_inst_noperands(xi)-1) &&
+			((xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_EXPLICIT) ||
+				((xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_IMPLICIT) &&
+				(xed_decoded_inst_get_reg(xedd, xed_operand_name(xed_inst_operand(xi, opIndex+1))) != XED_REG_ST0))))
+				result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
 	}
 
-public:
-	X86CommonArchitecture(const string& name, size_t bits): Architecture(name), m_bits(bits)
+	if (extra_index_operand != XED_REG_INVALID)
 	{
-		Ref<Settings> settings = Settings::Instance();
-		const bool lowercase = settings->Get<bool>("arch.x86.disassembly.lowercase");
-		const string flavor = settings->Get<string>("arch.x86.disassembly.syntax");
-		const string separator = settings->Get<string>("arch.x86.disassembly.separator");
+		result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
+		string reg = xed_reg_enum_t2str(extra_index_operand);
+		if (m_disassembly_options.lowerCase)
+			for (char& c : reg)
+				c = tolower(c);
+		result.emplace_back(RegisterToken, reg);
+	}
+}
 
-		DISASSEMBLY_FLAVOR_ENUM flavorEnum;
+void X86CommonArchitecture::GetOperandTextATT(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t len, const xed_operand_values_t* const ov, const xed_inst_t* const xi, vector<InstructionTextToken>& result) const
+{
+	unsigned i,j;
+	unsigned noperands = xed_inst_noperands(xi);
 
-		if (flavor == "BN_INTEL")
-			flavorEnum = DF_BN_INTEL;
-		else if (flavor == "INTEL")
-			flavorEnum = DF_INTEL;
-		else if (flavor == "AT&T")
-			flavorEnum = DF_ATT;
-		// else if (flavor == "XED")
-			// flavorEnum = DF_XED;
+	bool intel_way = false;
+
+	if (xed_inst_get_attribute(xi, XED_ATTRIBUTE_ATT_OPERAND_ORDER_EXCEPTION))
+		intel_way = true;
+
+	// if (xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_INDEX_REG_IS_POINTER))
+	// {
+	// 	for(j=0; j<noperands; ++j)
+	// 	{
+	// 		i = noperands - j - 1;  // never intel_way
+
+	// 		if(xed_operand_name(xed_inst_operand(xi,i)) == XED_OPERAND_MEM0)
+	// 			cout << "%" + xed_reg_enum_t2str(xed3_operand_get_index(xedd));
+	// 	}
+	// }
+
+	for(j=0; j<noperands; ++j)
+	{
+		if (intel_way)
+			i = j;
 		else
-			flavorEnum = DF_BN_INTEL;
+			i = noperands - j - 1;
 
-		m_disassembly_options = DISASSEMBLY_OPTIONS(flavorEnum, lowercase, separator);
-	}
+		const xed_operand_t*          op = xed_inst_operand(xi, i);
+		const xed_operand_enum_t op_name = xed_operand_name(op);
 
-	virtual BNEndianness GetEndianness() const override
-	{
-		return LittleEndian;
-	}
-
-	virtual vector<uint32_t> GetGlobalRegisters() override
-	{
-		return vector< uint32_t> { XED_REG_CS, XED_REG_DS, XED_REG_ES, XED_REG_SS, XED_REG_FS, XED_REG_GS, XED_REG_FSBASE, XED_REG_GSBASE };
-	}
-
-	virtual bool GetInstructionInfo(const uint8_t* data, uint64_t addr, size_t maxLen, InstructionInfo& result) override
-	{
-		xed_decoded_inst_t xedd;
-		switch (m_bits)
+		// XED's suppressed operands shouln't be represented in Intel syntax
+		if (xed_operand_operand_visibility(op) == XED_OPVIS_SUPPRESSED)
 		{
-		case 64:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+			if ((xed_decoded_inst_get_category(xedd) == XED_CATEGORY_STRINGOP) &&
+				(op_name == XED_OPERAND_MEM0 || op_name == XED_OPERAND_MEM1))
+			{
+				if (op_name == XED_OPERAND_MEM1)
+					result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
+			}
+			else
+			{
+				continue;
+			}
+		}
+
+		switch(xed_operand_name(op))
+		{
+		case XED_OPERAND_REG0:
+		case XED_OPERAND_REG1:
+		case XED_OPERAND_REG2:
+		case XED_OPERAND_REG3:
+		case XED_OPERAND_REG4:
+		case XED_OPERAND_REG5:
+		case XED_OPERAND_REG6:
+		case XED_OPERAND_REG7:
+		case XED_OPERAND_REG8:
+		{
+			string reg = "%";
+
+			const xed_reg_enum_t xedReg = xed_decoded_inst_get_reg(xedd, op_name);
+			if ((xedReg >= XED_REG_X87_FIRST) && (xedReg <=  XED_REG_X87_LAST))
+			{
+				reg += "ST";
+				reg += ('0' + (xedReg-XED_REG_X87_FIRST));
+			}
+			else
+			{
+				reg += xed_reg_enum_t2str(xedReg);
+			}
+			if (m_disassembly_options.lowerCase)
+				for (char& c : reg)
+					c = tolower(c);
+			result.emplace_back(RegisterToken, reg);
 			break;
-		case 32:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		}
+		case XED_OPERAND_AGEN:
+		case XED_OPERAND_MEM0:
+		{
+			GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, i) / 8, result, m_disassembly_options.lowerCase);
+
+			if (m_disassembly_options.lowerCase)
+				result.emplace_back(TextToken, "ptr ");
+			else
+				result.emplace_back(TextToken, "PTR ");
+			result.emplace_back(TextToken, "[");
+
+			// Segment
+			const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 0);
+			const bool validSegment = (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 0));
+			if (validSegment)
+			{
+				string seg_str(xed_reg_enum_t2str(seg));
+				seg_str = "%" + seg_str;
+				if (m_disassembly_options.lowerCase)
+					for (char& c : seg_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, seg_str);
+				result.emplace_back(TextToken, ":");
+			}
+
+			bool started = false;
+			xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 0);
+
+			int64_t disp = xed_decoded_inst_get_memory_displacement(xedd, 0);
+
+			if ((base != XED_REG_INVALID) && !((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP)))
+			{
+				string base_str(xed_reg_enum_t2str(base));
+				base_str = "%" + base_str;
+				if (m_disassembly_options.lowerCase)
+					for (char& c : base_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, base_str);
+				started = true;
+			}
+			else if ((base == XED_REG_RIP) || (base == XED_REG_EIP) || (base == XED_REG_IP))
+			{
+				if (xed_operand_values_has_memory_displacement(ov))
+					disp += addr + len;
+				else
+					disp = addr + len;
+
+				stringstream sstream;
+				if (m_disassembly_options.lowerCase)
+					sstream << "0x" << hex << nouppercase << disp;
+				else
+					sstream << "0x" << hex << uppercase << disp;
+
+				result.emplace_back(CodeRelativeAddressToken, sstream.str(), disp, GetAddressSize());
+
+				result.emplace_back(EndMemoryOperandToken, "]");
+				break;
+			}
+
+			const xed_reg_enum_t index = xed_decoded_inst_get_index_reg(xedd, 0);
+			if (index != XED_REG_INVALID)
+			{
+				if (started)
+					result.emplace_back(TextToken, "+");
+				started = true;
+
+				string index_str(xed_reg_enum_t2str(index));
+				index_str = "%" + index_str;
+				if (m_disassembly_options.lowerCase)
+					for (char& c : index_str)
+						c = tolower(c);
+
+				result.emplace_back(RegisterToken, index_str);
+
+				const unsigned int scale = xed_decoded_inst_get_scale(xedd, 0);
+				if (scale != 1)
+				{
+					result.emplace_back(TextToken, "*");
+					stringstream sstream;
+					sstream << scale;
+					result.emplace_back(IntegerToken, sstream.str(), scale, 1);
+				}
+			}
+
+			const unsigned short disp_bytes = xed_decoded_inst_get_memory_displacement_width_bits(xedd, 0) / 8;
+
+			if (xed_operand_values_has_memory_displacement(ov) &&
+				((disp != 0) || (!started && validSegment)))
+			{
+				stringstream sstream;
+				sstream << "0x" << hex;
+				if (m_disassembly_options.lowerCase)
+					sstream << nouppercase;
+				else
+					sstream << uppercase;
+
+				if (started)
+				{
+					if (disp < 0)
+					{
+						result.emplace_back(TextToken, "-");
+						disp = -disp;
+					}
+					else
+						result.emplace_back(TextToken, "+");
+
+					if (disp_bytes == 2)
+						sstream << (uint16_t)disp;
+					else if (disp_bytes == 4)
+						sstream << (uint32_t)disp;
+					else if (disp_bytes == 8)
+						sstream << (uint64_t)disp;
+					else
+						sstream << disp;
+					result.emplace_back(IntegerToken, sstream.str(), disp, disp_bytes);
+				}
+				else
+				{
+					sstream << disp;
+
+					if (validSegment)
+						result.emplace_back(IntegerToken, sstream.str(), disp, GetAddressSize());
+					else
+						result.emplace_back(PossibleAddressToken, sstream.str(), disp, GetAddressSize());
+				}
+			}
+			else if (xed_operand_values_has_memory_displacement(ov) &&
+				((disp == 0) && (!started)))
+			{
+				result.emplace_back(IntegerToken, "0x0", disp, GetAddressSize());
+			}
+			result.emplace_back(EndMemoryOperandToken, "]");
+
 			break;
-		case 16:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		}
+
+		case XED_OPERAND_MEM1:
+		{
+			GetAddressSizeToken(xed_decoded_inst_operand_length_bits(xedd, i) / 8, result, m_disassembly_options.lowerCase);
+
+			if (m_disassembly_options.lowerCase)
+				result.emplace_back(TextToken, "ptr ");
+			else
+				result.emplace_back(TextToken, "PTR ");
+
+			// Segment
+			const xed_reg_enum_t seg = xed_decoded_inst_get_seg_reg(xedd, 1);
+			if (seg != XED_REG_INVALID && !xed_operand_values_using_default_segment(ov, 1))
+			{
+				string seg_str(xed_reg_enum_t2str(seg));
+				seg_str = "%" + seg_str;
+				if (m_disassembly_options.lowerCase)
+					for (char& c : seg_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, seg_str);
+
+				result.emplace_back(TextToken, ":");
+			}
+
+			result.emplace_back(TextToken, "[");
+			const xed_reg_enum_t base = xed_decoded_inst_get_base_reg(xedd, 1);
+			if (base != XED_REG_INVALID)
+			{
+				string base_str(xed_reg_enum_t2str(base));
+				base_str = "%" + base_str;
+				if (m_disassembly_options.lowerCase)
+					for (char& c : base_str)
+						c = tolower(c);
+				result.emplace_back(RegisterToken, base_str);
+			}
+			result.emplace_back(EndMemoryOperandToken, "]");
+
 			break;
+		}
+
+		case XED_OPERAND_IMM0:
+		{
+			const size_t            addrSize = xed_decoded_inst_get_machine_mode_bits(xedd) / 8;
+			const unsigned int immediateSize = xed_decoded_inst_get_operand_width(xedd) / 8;
+
+			stringstream sstream;
+			sstream << "$0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			if (xed_decoded_inst_get_immediate_is_signed(xedd) && (immediateSize != 1))
+			{
+				const int64_t immediateValue = xed_decoded_inst_get_signed_immediate(xedd);
+
+				if (immediateValue >= 0)
+					sstream << immediateValue;  // Don't zero extend
+				else
+				{
+					// I'm not proud of this switch statement... It was the product of a lot of pain.
+					switch (immediateSize)  // For sign extentions
+					{
+					case 1:
+						sstream << (int8_t)immediateValue;
+						break;
+					case 2:
+						sstream << (int16_t)immediateValue;
+						break;
+					case 4:
+						sstream << (int32_t)immediateValue;
+						break;
+					default:
+						sstream << (int64_t)immediateValue;
+					}
+				}
+
+				if (immediateSize == addrSize)
+					result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
+				else
+					result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
+			}
+			else
+			{
+				const uint64_t immediateValue = xed_decoded_inst_get_unsigned_immediate(xedd);
+				sstream << immediateValue;
+				if (immediateSize == addrSize)
+					result.emplace_back(PossibleAddressToken, sstream.str(), immediateValue, immediateSize);
+				else
+					result.emplace_back(IntegerToken, sstream.str(), immediateValue, immediateSize);
+			}
+			break;
+		}
+
+		case XED_OPERAND_IMM1:
+		{
+			stringstream sstream;
+			sstream << "$0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << (uint16_t)xed_decoded_inst_get_second_immediate(xedd);
+			result.emplace_back(IntegerToken, sstream.str(), xed_decoded_inst_get_second_immediate(xedd), 1);
+			break;
+		}
+
+		case XED_OPERAND_PTR:
+		{
+			stringstream sstream;
+			sstream << "$0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << xed_decoded_inst_get_branch_displacement(xedd);
+			result.emplace_back(PossibleAddressToken, sstream.str(), xed_decoded_inst_get_branch_displacement(xedd), 8);
+			break;
+
+		}
+
+		case XED_OPERAND_RELBR:
+		{
+			const int64_t relbr = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
+
+			stringstream sstream;
+			sstream << "$0x" << hex;
+			if (m_disassembly_options.lowerCase)
+				sstream << nouppercase;
+			else
+				sstream << uppercase;
+
+			sstream << relbr;
+			result.emplace_back(CodeRelativeAddressToken, sstream.str(), relbr, 8);
+			break;
+		}
+
 		default:
-			LogError("Invalid Processor Mode");
-			return false;
-		}
-		if (!Decode(data, maxLen, &xedd))
-			return false;
+		{
+			result.emplace_back(TextToken, "unimplimented");
+		}  // default case of outer switch
+		}  // outer switch
 
-		SetInstructionInfoForInstruction(addr, result, &xedd);
-		return true;
+		// If there is another operand and it is visable, print delimiter
+		if (intel_way)
+		{
+			if ((i != (size_t)xed_inst_noperands(xi)-1) &&
+				((xed_operand_operand_visibility(xed_inst_operand(xi, i+1)) == XED_OPVIS_EXPLICIT) ||
+				(xed_operand_operand_visibility(xed_inst_operand(xi, i+1)) == XED_OPVIS_IMPLICIT)))
+			{
+					result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
+			}
+		}
+		else
+		{
+			if ((i != 0) &&
+				((xed_operand_operand_visibility(xed_inst_operand(xi, noperands - j - 2)) == XED_OPVIS_EXPLICIT) ||
+				(xed_operand_operand_visibility(xed_inst_operand(xi, noperands - j - 2)) == XED_OPVIS_IMPLICIT)))
+			{
+					result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
+			}
+		}
+
+	}
+}
+
+void X86CommonArchitecture::GetOperandTextXED(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t, const xed_operand_values_t* const, const xed_inst_t* const, vector<InstructionTextToken>& result) const
+{
+	char out_buffer[100];
+	if (!xed_format_context(XED_SYNTAX_XED, xedd, out_buffer, 100, addr, 0, 0))
+	{
+		LogError("Can't disassemble");
+		return;
 	}
 
+	// Find space
+	int i = 0;
+	for (; ; ++i)
+		if ((out_buffer[i] == ' ') && (out_buffer[i+1] != ' '))
+			break;
 
-	virtual bool GetInstructionText(const uint8_t* data, uint64_t addr, size_t& len, vector<InstructionTextToken>& result) override
+	// Convert To String
+	string outstring(out_buffer+i);
+
+	result.emplace_back(TextToken, outstring);
+}
+
+void X86CommonArchitecture::GetOperandText(const xed_decoded_inst_t* const xedd, const uint64_t addr, const size_t len, const xed_operand_values_t* const ov, const xed_inst_t* const xi, vector<InstructionTextToken>& result) const
+{
+	switch (m_disassembly_options.df)
 	{
-		xed_decoded_inst_t xedd;
-		switch (m_bits)
-		{
-		case 64:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-			break;
-		case 32:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
-			break;
-		case 16:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
-			break;
-		default:
-			LogError("Invalid Processor Mode");
-			return false;
-		}
+	case DF_INTEL:
+		GetOperandTextIntel(xedd, addr, len, ov, xi, result);
+		break;
 
-		if (Decode(data, len, &xedd))
-		{
-			len = xed_decoded_inst_get_length(&xedd);
+	case DF_BN_INTEL:
+		GetOperandTextBNIntel(xedd, addr, len, ov, xi, result);
+		break;
 
-			// If there's no instruction
-			const xed_inst_t* xi = xed_decoded_inst_inst(&xedd);
-			if (!xi)
-				return false;
+	case DF_ATT:
+		GetOperandTextATT(xedd, addr, len, ov, xi, result);
+		break;
 
-			// Opcodes
-			const xed_operand_values_t* const   ov = xed_decoded_inst_operands_const(&xedd);
-			unsigned short instruction_name_length = GetInstructionOpcode(&xedd, ov, result);
+	case DF_XED:
+		GetOperandTextXED(xedd, addr, len, ov, xi, result);
+		break;
 
-			// Padding
-			GetInstructionPadding(instruction_name_length, result);
+	default:
+		LogError("Invalid Disassembly Flavor");
+	}
+}
 
-			// Operands
-			GetOperandText(&xedd, addr, len, ov, xi, result);
+X86CommonArchitecture::X86CommonArchitecture(const string& name, size_t bits): Architecture(name), m_bits(bits)
+{
+	Ref<Settings> settings = Settings::Instance();
+	const bool lowercase = settings->Get<bool>("arch.x86.disassembly.lowercase");
+	const string flavor = settings->Get<string>("arch.x86.disassembly.syntax");
+	const string separator = settings->Get<string>("arch.x86.disassembly.separator");
 
-			return true;
-		}
+	DISASSEMBLY_FLAVOR_ENUM flavorEnum;
 
+	if (flavor == "BN_INTEL")
+		flavorEnum = DF_BN_INTEL;
+	else if (flavor == "INTEL")
+		flavorEnum = DF_INTEL;
+	else if (flavor == "AT&T")
+		flavorEnum = DF_ATT;
+	// else if (flavor == "XED")
+		// flavorEnum = DF_XED;
+	else
+		flavorEnum = DF_BN_INTEL;
+
+	m_disassembly_options = DISASSEMBLY_OPTIONS(flavorEnum, lowercase, separator);
+}
+
+BNEndianness X86CommonArchitecture::GetEndianness() const
+{
+	return LittleEndian;
+}
+
+vector<uint32_t> X86CommonArchitecture::GetGlobalRegisters()
+{
+	return vector< uint32_t> { XED_REG_CS, XED_REG_DS, XED_REG_ES, XED_REG_SS, XED_REG_FS, XED_REG_GS, XED_REG_FSBASE, XED_REG_GSBASE };
+}
+
+bool X86CommonArchitecture::GetInstructionInfo(const uint8_t* data, uint64_t addr, size_t maxLen, InstructionInfo& result)
+{
+	xed_decoded_inst_t xedd;
+	switch (m_bits)
+	{
+	case 64:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+		break;
+	case 32:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		break;
+	case 16:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		break;
+	default:
+		LogError("Invalid Processor Mode");
+		return false;
+	}
+	if (!Decode(data, maxLen, &xedd))
+		return false;
+
+	SetInstructionInfoForInstruction(addr, result, &xedd);
+	return true;
+}
+
+
+bool X86CommonArchitecture::GetInstructionText(const uint8_t* data, uint64_t addr, size_t& len, vector<InstructionTextToken>& result)
+{
+	xed_decoded_inst_t xedd;
+	switch (m_bits)
+	{
+	case 64:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+		break;
+	case 32:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		break;
+	case 16:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		break;
+	default:
+		LogError("Invalid Processor Mode");
 		return false;
 	}
 
-	virtual bool GetInstructionLowLevelIL(const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il) override
+	if (Decode(data, len, &xedd))
 	{
-		xed_decoded_inst_t xedd;
-		switch (m_bits)
-		{
-		case 64:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-			break;
-		case 32:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
-			break;
-		case 16:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
-			break;
-		default:
-			LogError("Invalid Processor Mode");
-			return false;
-		}
-		if (!Decode(data, len, &xedd))
-		{
-			il.AddInstruction(il.Undefined());
-			return false;
-		}
-
 		len = xed_decoded_inst_get_length(&xedd);
-		return GetLowLevelILForInstruction(this, addr, il, &xedd);
+
+		// If there's no instruction
+		const xed_inst_t* xi = xed_decoded_inst_inst(&xedd);
+		if (!xi)
+			return false;
+
+		// Opcodes
+		const xed_operand_values_t* const   ov = xed_decoded_inst_operands_const(&xedd);
+		unsigned short instruction_name_length = GetInstructionOpcode(&xedd, ov, result);
+
+		// Padding
+		GetInstructionPadding(instruction_name_length, result);
+
+		// Operands
+		GetOperandText(&xedd, addr, len, ov, xi, result);
+
+		return true;
 	}
 
-	virtual size_t GetFlagWriteLowLevelIL(BNLowLevelILOperation op, size_t size, uint32_t flagWriteType,
-		uint32_t flag, BNRegisterOrConstant* operands, size_t operandCount, LowLevelILFunction& il) override
+	return false;
+}
+
+bool X86CommonArchitecture::GetInstructionLowLevelIL(const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il)
+{
+	xed_decoded_inst_t xedd;
+	switch (m_bits)
 	{
-		switch (op)
+	case 64:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+		break;
+	case 32:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		break;
+	case 16:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		break;
+	default:
+		LogError("Invalid Processor Mode");
+		return false;
+	}
+	if (!Decode(data, len, &xedd))
+	{
+		il.AddInstruction(il.Undefined());
+		return false;
+	}
+
+	len = xed_decoded_inst_get_length(&xedd);
+	return GetLowLevelILForInstruction(this, addr, il, &xedd);
+}
+
+size_t X86CommonArchitecture::GetFlagWriteLowLevelIL(BNLowLevelILOperation op, size_t size, uint32_t flagWriteType,
+	uint32_t flag, BNRegisterOrConstant* operands, size_t operandCount, LowLevelILFunction& il)
+{
+	switch (op)
+	{
+	case LLIL_NEG:
+		switch (flag)
 		{
-		case LLIL_NEG:
-			switch (flag)
-			{
-			case IL_FLAG_O:
-				return il.AddExpr(LLIL_CMP_E, size, 0, il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
-					il.AddExpr(LLIL_CONST, size, 0, (1LL << ((size * 8) - 1))));
-			}
-			break;
-		case LLIL_XOR:
-			switch (flag)
-			{
-			case IL_FLAG_C:
-			case IL_FLAG_O:
-				return il.Const(0, 0);
-			}
-			break;
-		case LLIL_MULU_DP:
-			switch (flag)
-			{
-			case IL_FLAG_C:
-			case IL_FLAG_O:
-				return il.AddExpr(LLIL_CMP_NE, size * 2, 0, il.AddExpr(LLIL_LSR, size * 2, 0,
-					il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
-					il.AddExpr(LLIL_CONST, 1, 0, size * 8)), il.AddExpr(LLIL_CONST, size * 2, 0, 0));
-			}
-		default:
-			break;
+		case IL_FLAG_O:
+			return il.AddExpr(LLIL_CMP_E, size, 0, il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
+				il.AddExpr(LLIL_CONST, size, 0, (1LL << ((size * 8) - 1))));
 		}
-		if (((flagWriteType == IL_FLAGWRITE_X87COM) || (flagWriteType == IL_FLAGWRITE_X87C1Z)) && (flag == IL_FLAG_C1))
+		break;
+	case LLIL_XOR:
+		switch (flag)
+		{
+		case IL_FLAG_C:
+		case IL_FLAG_O:
 			return il.Const(0, 0);
-		return Architecture::GetFlagWriteLowLevelIL(op, size, flagWriteType, flag, operands, operandCount, il);
-	}
-
-	virtual size_t GetSemanticFlagGroupLowLevelIL(uint32_t semGroup, LowLevelILFunction& il) override
-	{
-		switch (semGroup)
-		{
-		case IL_FLAG_GROUP_E:
-			return GetFlagConditionLowLevelIL(LLFC_E, IL_FLAG_CLASS_INT, il);
-		case IL_FLAG_GROUP_NE:
-			return GetFlagConditionLowLevelIL(LLFC_NE, IL_FLAG_CLASS_INT, il);
-		case IL_FLAG_GROUP_LT:
-			return GetFlagConditionLowLevelIL(LLFC_ULT, IL_FLAG_CLASS_INT, il);
-		case IL_FLAG_GROUP_LE:
-			return GetFlagConditionLowLevelIL(LLFC_ULE, IL_FLAG_CLASS_INT, il);
-		case IL_FLAG_GROUP_GE:
-			return GetFlagConditionLowLevelIL(LLFC_UGE, IL_FLAG_CLASS_INT, il);
-		case IL_FLAG_GROUP_GT:
-			return GetFlagConditionLowLevelIL(LLFC_UGT, IL_FLAG_CLASS_INT, il);
-		case IL_FLAG_GROUP_PE:
-			return il.Flag(IL_FLAG_P);
-		case IL_FLAG_GROUP_PO:
-			return il.Not(0, il.Flag(IL_FLAG_P));
-		default:
-			return il.Unimplemented();
 		}
-	}
-
-	virtual string GetRegisterName(uint32_t reg) override
-	{
-		string reg_str = "";
-		if (m_disassembly_options.df == DF_ATT)
-			reg_str += "%";
-
-		if ((reg >= REG_X87_r(0)) && (reg <= REG_X87_r(7)))
-			reg_str += "X87_R" + to_string(reg - REG_X87_r(0));
-		else if (reg == REG_X87_TOP)
-			reg_str += "TOP";
-		else if ((reg >= XED_REG_X87_FIRST) && (reg <= XED_REG_X87_LAST))
-			reg_str += "ST" + to_string(reg - XED_REG_X87_FIRST);
-		else
-			reg_str += xed_reg_enum_t2str((xed_reg_enum_t)reg);
-
-		if (m_disassembly_options.lowerCase)
-			for (char& c : reg_str)
-				c = tolower(c);
-
-		return reg_str;
-	}
-
-	virtual string GetFlagName(uint32_t flag) override
-	{
-		char result[32];
+		break;
+	case LLIL_MULU_DP:
 		switch (flag)
 		{
 		case IL_FLAG_C:
-			return "c";
-		case IL_FLAG_P:
-			return "p";
-		case IL_FLAG_A:
-			return "a";
-		case IL_FLAG_Z:
-			return "z";
-		case IL_FLAG_S:
-			return "s";
-		case IL_FLAG_D:
-			return "d";
 		case IL_FLAG_O:
-			return "o";
+			return il.AddExpr(LLIL_CMP_NE, size * 2, 0, il.AddExpr(LLIL_LSR, size * 2, 0,
+				il.GetExprForRegisterOrConstantOperation(op, size, operands, operandCount),
+				il.AddExpr(LLIL_CONST, 1, 0, size * 8)), il.AddExpr(LLIL_CONST, size * 2, 0, 0));
+		}
+	default:
+		break;
+	}
+	if (((flagWriteType == IL_FLAGWRITE_X87COM) || (flagWriteType == IL_FLAGWRITE_X87C1Z)) && (flag == IL_FLAG_C1))
+		return il.Const(0, 0);
+	return Architecture::GetFlagWriteLowLevelIL(op, size, flagWriteType, flag, operands, operandCount, il);
+}
+
+size_t X86CommonArchitecture::GetSemanticFlagGroupLowLevelIL(uint32_t semGroup, LowLevelILFunction& il)
+{
+	switch (semGroup)
+	{
+	case IL_FLAG_GROUP_E:
+		return GetFlagConditionLowLevelIL(LLFC_E, IL_FLAG_CLASS_INT, il);
+	case IL_FLAG_GROUP_NE:
+		return GetFlagConditionLowLevelIL(LLFC_NE, IL_FLAG_CLASS_INT, il);
+	case IL_FLAG_GROUP_LT:
+		return GetFlagConditionLowLevelIL(LLFC_ULT, IL_FLAG_CLASS_INT, il);
+	case IL_FLAG_GROUP_LE:
+		return GetFlagConditionLowLevelIL(LLFC_ULE, IL_FLAG_CLASS_INT, il);
+	case IL_FLAG_GROUP_GE:
+		return GetFlagConditionLowLevelIL(LLFC_UGE, IL_FLAG_CLASS_INT, il);
+	case IL_FLAG_GROUP_GT:
+		return GetFlagConditionLowLevelIL(LLFC_UGT, IL_FLAG_CLASS_INT, il);
+	case IL_FLAG_GROUP_PE:
+		return il.Flag(IL_FLAG_P);
+	case IL_FLAG_GROUP_PO:
+		return il.Not(0, il.Flag(IL_FLAG_P));
+	default:
+		return il.Unimplemented();
+	}
+}
+
+string X86CommonArchitecture::GetRegisterName(uint32_t reg)
+{
+	string reg_str = "";
+	if (m_disassembly_options.df == DF_ATT)
+		reg_str += "%";
+
+	if ((reg >= REG_X87_r(0)) && (reg <= REG_X87_r(7)))
+		reg_str += "X87_R" + to_string(reg - REG_X87_r(0));
+	else if (reg == REG_X87_TOP)
+		reg_str += "TOP";
+	else if ((reg >= XED_REG_X87_FIRST) && (reg <= XED_REG_X87_LAST))
+		reg_str += "ST" + to_string(reg - XED_REG_X87_FIRST);
+	else
+		reg_str += xed_reg_enum_t2str((xed_reg_enum_t)reg);
+
+	if (m_disassembly_options.lowerCase)
+		for (char& c : reg_str)
+			c = tolower(c);
+
+	return reg_str;
+}
+
+string X86CommonArchitecture::GetFlagName(uint32_t flag)
+{
+	char result[32];
+	switch (flag)
+	{
+	case IL_FLAG_C:
+		return "c";
+	case IL_FLAG_P:
+		return "p";
+	case IL_FLAG_A:
+		return "a";
+	case IL_FLAG_Z:
+		return "z";
+	case IL_FLAG_S:
+		return "s";
+	case IL_FLAG_D:
+		return "d";
+	case IL_FLAG_O:
+		return "o";
+	case IL_FLAG_C0:
+		return "c0";
+	case IL_FLAG_C1:
+		return "c1";
+	case IL_FLAG_C2:
+		return "c2";
+	case IL_FLAG_C3:
+		return "c3";
+	default:
+		sprintf(result, "flag%" PRIu32, flag);
+		return result;
+	}
+}
+
+vector<uint32_t> X86CommonArchitecture::GetAllFlags()
+{
+	return vector<uint32_t> {IL_FLAG_C, IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_D, IL_FLAG_O,
+		IL_FLAG_C0, IL_FLAG_C1, IL_FLAG_C2, IL_FLAG_C3};
+}
+
+string X86CommonArchitecture::GetSemanticFlagClassName(uint32_t semClass)
+{
+	switch (semClass)
+	{
+	case IL_FLAG_CLASS_X87COM:
+		return "x87com";
+	case IL_FLAG_CLASS_X87COMI:
+		return "x87comi";
+	default:
+		return "";
+	}
+}
+
+vector<uint32_t> X86CommonArchitecture::GetAllSemanticFlagClasses()
+{
+	return vector<uint32_t> {IL_FLAG_CLASS_X87COM, IL_FLAG_CLASS_X87COMI};
+}
+
+string X86CommonArchitecture::GetSemanticFlagGroupName(uint32_t semGroup)
+{
+	switch (semGroup)
+	{
+	case IL_FLAG_GROUP_E:
+		return "e";
+	case IL_FLAG_GROUP_NE:
+		return "ne";
+	case IL_FLAG_GROUP_LT:
+		return "lt";
+	case IL_FLAG_GROUP_LE:
+		return "le";
+	case IL_FLAG_GROUP_GE:
+		return "ge";
+	case IL_FLAG_GROUP_GT:
+		return "gt";
+	case IL_FLAG_GROUP_PE:
+		return "pe";
+	case IL_FLAG_GROUP_PO:
+		return "po";
+	default:
+		return "";
+	}
+}
+
+vector<uint32_t> X86CommonArchitecture::GetAllSemanticFlagGroups()
+{
+	return vector<uint32_t> {IL_FLAG_GROUP_E, IL_FLAG_GROUP_NE, IL_FLAG_GROUP_LT, IL_FLAG_GROUP_LE,
+		IL_FLAG_GROUP_GE, IL_FLAG_GROUP_GT, IL_FLAG_GROUP_PE, IL_FLAG_GROUP_PO};
+}
+
+string X86CommonArchitecture::GetFlagWriteTypeName(uint32_t flags)
+{
+	switch (flags)
+	{
+	case IL_FLAGWRITE_ALL:
+		return "*";
+	case IL_FLAGWRITE_NOCARRY:
+		return "!c";
+	case IL_FLAGWRITE_CO:
+		return "co";
+	case IL_FLAGWRITE_X87COM:
+		return "x87com";
+	case IL_FLAGWRITE_X87COMI:
+		return "x87comi";
+	case IL_FLAGWRITE_X87C1Z:
+		return "x87c1z";
+	case IL_FLAGWRITE_X87RND:
+		return "x87rnd";
+	default:
+		return "";
+	}
+}
+
+uint32_t X86CommonArchitecture::GetSemanticClassForFlagWriteType(uint32_t writeType)
+{
+	switch (writeType)
+	{
+	case IL_FLAGWRITE_X87COM:
+	case IL_FLAGWRITE_X87C1Z:
+	case IL_FLAGWRITE_X87RND:
+		return IL_FLAG_CLASS_X87COM;
+	case IL_FLAGWRITE_X87COMI:
+		return IL_FLAG_CLASS_X87COMI;
+	default:
+		return IL_FLAG_CLASS_INT;
+	}
+}
+
+vector<uint32_t> X86CommonArchitecture::GetAllFlagWriteTypes()
+{
+	return vector<uint32_t> {IL_FLAGWRITE_ALL, IL_FLAGWRITE_NOCARRY, IL_FLAGWRITE_CO,
+		IL_FLAGWRITE_X87COM, IL_FLAGWRITE_X87COMI, IL_FLAGWRITE_X87C1Z, IL_FLAGWRITE_X87RND};
+}
+
+BNFlagRole X86CommonArchitecture::GetFlagRole(uint32_t flag, uint32_t semClass)
+{
+	if (semClass == IL_FLAG_CLASS_X87COM)
+	{
+		switch (flag)
+		{
 		case IL_FLAG_C0:
-			return "c0";
-		case IL_FLAG_C1:
-			return "c1";
-		case IL_FLAG_C2:
-			return "c2";
-		case IL_FLAG_C3:
-			return "c3";
-		default:
-			sprintf(result, "flag%" PRIu32, flag);
-			return result;
-		}
-	}
-
-	virtual vector<uint32_t> GetAllFlags() override
-	{
-		return vector<uint32_t> {IL_FLAG_C, IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_D, IL_FLAG_O,
-			IL_FLAG_C0, IL_FLAG_C1, IL_FLAG_C2, IL_FLAG_C3};
-	}
-
-	virtual string GetSemanticFlagClassName(uint32_t semClass) override
-	{
-		switch (semClass)
-		{
-		case IL_FLAG_CLASS_X87COM:
-			return "x87com";
-		case IL_FLAG_CLASS_X87COMI:
-			return "x87comi";
-		default:
-			return "";
-		}
-	}
-
-	virtual vector<uint32_t> GetAllSemanticFlagClasses() override
-	{
-		return vector<uint32_t> {IL_FLAG_CLASS_X87COM, IL_FLAG_CLASS_X87COMI};
-	}
-
-	virtual string GetSemanticFlagGroupName(uint32_t semGroup) override
-	{
-		switch (semGroup)
-		{
-		case IL_FLAG_GROUP_E:
-			return "e";
-		case IL_FLAG_GROUP_NE:
-			return "ne";
-		case IL_FLAG_GROUP_LT:
-			return "lt";
-		case IL_FLAG_GROUP_LE:
-			return "le";
-		case IL_FLAG_GROUP_GE:
-			return "ge";
-		case IL_FLAG_GROUP_GT:
-			return "gt";
-		case IL_FLAG_GROUP_PE:
-			return "pe";
-		case IL_FLAG_GROUP_PO:
-			return "po";
-		default:
-			return "";
-		}
-	}
-
-	virtual vector<uint32_t> GetAllSemanticFlagGroups() override
-	{
-		return vector<uint32_t> {IL_FLAG_GROUP_E, IL_FLAG_GROUP_NE, IL_FLAG_GROUP_LT, IL_FLAG_GROUP_LE,
-			IL_FLAG_GROUP_GE, IL_FLAG_GROUP_GT, IL_FLAG_GROUP_PE, IL_FLAG_GROUP_PO};
-	}
-
-	virtual string GetFlagWriteTypeName(uint32_t flags) override
-	{
-		switch (flags)
-		{
-		case IL_FLAGWRITE_ALL:
-			return "*";
-		case IL_FLAGWRITE_NOCARRY:
-			return "!c";
-		case IL_FLAGWRITE_CO:
-			return "co";
-		case IL_FLAGWRITE_X87COM:
-			return "x87com";
-		case IL_FLAGWRITE_X87COMI:
-			return "x87comi";
-		case IL_FLAGWRITE_X87C1Z:
-			return "x87c1z";
-		case IL_FLAGWRITE_X87RND:
-			return "x87rnd";
-		default:
-			return "";
-		}
-	}
-
-	virtual uint32_t GetSemanticClassForFlagWriteType(uint32_t writeType) override
-	{
-		switch (writeType)
-		{
-		case IL_FLAGWRITE_X87COM:
-		case IL_FLAGWRITE_X87C1Z:
-		case IL_FLAGWRITE_X87RND:
-			return IL_FLAG_CLASS_X87COM;
-		case IL_FLAGWRITE_X87COMI:
-			return IL_FLAG_CLASS_X87COMI;
-		default:
-			return IL_FLAG_CLASS_INT;
-		}
-	}
-
-	virtual vector<uint32_t> GetAllFlagWriteTypes() override
-	{
-		return vector<uint32_t> {IL_FLAGWRITE_ALL, IL_FLAGWRITE_NOCARRY, IL_FLAGWRITE_CO,
-			IL_FLAGWRITE_X87COM, IL_FLAGWRITE_X87COMI, IL_FLAGWRITE_X87C1Z, IL_FLAGWRITE_X87RND};
-	}
-
-	virtual BNFlagRole GetFlagRole(uint32_t flag, uint32_t semClass) override
-	{
-		if (semClass == IL_FLAG_CLASS_X87COM)
-		{
-			switch (flag)
-			{
-			case IL_FLAG_C0:
-				return CarryFlagRole;
-			case IL_FLAG_C2:
-				return UnorderedFlagRole;
-			case IL_FLAG_C3:
-				return ZeroFlagRole;
-			default:
-				return SpecialFlagRole;
-			}
-		}
-
-		switch (flag)
-		{
-		case IL_FLAG_C:
 			return CarryFlagRole;
-		case IL_FLAG_P:
-			if (semClass == IL_FLAG_CLASS_X87COMI)
-				return UnorderedFlagRole;
-			return EvenParityFlagRole;
-		case IL_FLAG_A:
-			return HalfCarryFlagRole;
-		case IL_FLAG_Z:
+		case IL_FLAG_C2:
+			return UnorderedFlagRole;
+		case IL_FLAG_C3:
 			return ZeroFlagRole;
-		case IL_FLAG_S:
-			return NegativeSignFlagRole;
-		case IL_FLAG_O:
-			return OverflowFlagRole;
 		default:
 			return SpecialFlagRole;
 		}
 	}
 
-	virtual vector<uint32_t> GetFlagsRequiredForFlagCondition(BNLowLevelILFlagCondition cond, uint32_t semClass) override
+	switch (flag)
 	{
-		if (semClass == IL_FLAG_CLASS_X87COM)
-		{
-			switch (cond)
-			{
-			case LLFC_FE:
-			case LLFC_FNE:
-				return vector<uint32_t>{ IL_FLAG_C3 };
-			case LLFC_FLT:
-			case LLFC_FGE:
-				return vector<uint32_t>{ IL_FLAG_C0 };
-			case LLFC_FLE:
-			case LLFC_FGT:
-				return vector<uint32_t>{ IL_FLAG_C0, IL_FLAG_C3 };
-			case LLFC_FO:
-			case LLFC_FUO:
-				return vector<uint32_t>{ IL_FLAG_C2 };
-			default:
-				return vector<uint32_t>();
-			}
-		}
+	case IL_FLAG_C:
+		return CarryFlagRole;
+	case IL_FLAG_P:
+		if (semClass == IL_FLAG_CLASS_X87COMI)
+			return UnorderedFlagRole;
+		return EvenParityFlagRole;
+	case IL_FLAG_A:
+		return HalfCarryFlagRole;
+	case IL_FLAG_Z:
+		return ZeroFlagRole;
+	case IL_FLAG_S:
+		return NegativeSignFlagRole;
+	case IL_FLAG_O:
+		return OverflowFlagRole;
+	default:
+		return SpecialFlagRole;
+	}
+}
 
+vector<uint32_t> X86CommonArchitecture::GetFlagsRequiredForFlagCondition(BNLowLevelILFlagCondition cond, uint32_t semClass)
+{
+	if (semClass == IL_FLAG_CLASS_X87COM)
+	{
 		switch (cond)
 		{
-		case LLFC_E:
-		case LLFC_NE:
 		case LLFC_FE:
 		case LLFC_FNE:
-			return vector<uint32_t>{ IL_FLAG_Z };
-		case LLFC_SLT:
-		case LLFC_SGE:
-			return vector<uint32_t>{ IL_FLAG_S, IL_FLAG_O };
-		case LLFC_ULT:
-		case LLFC_UGE:
+			return vector<uint32_t>{ IL_FLAG_C3 };
 		case LLFC_FLT:
 		case LLFC_FGE:
-			return vector<uint32_t>{ IL_FLAG_C };
-		case LLFC_SLE:
-		case LLFC_SGT:
-			return vector<uint32_t>{ IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
-		case LLFC_ULE:
-		case LLFC_UGT:
+			return vector<uint32_t>{ IL_FLAG_C0 };
 		case LLFC_FLE:
 		case LLFC_FGT:
-			return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_Z };
-		case LLFC_NEG:
-		case LLFC_POS:
-			return vector<uint32_t>{ IL_FLAG_S };
-		case LLFC_O:
-		case LLFC_NO:
-			return vector<uint32_t>{ IL_FLAG_O };
+			return vector<uint32_t>{ IL_FLAG_C0, IL_FLAG_C3 };
 		case LLFC_FO:
 		case LLFC_FUO:
-			return vector<uint32_t>{ IL_FLAG_P };
+			return vector<uint32_t>{ IL_FLAG_C2 };
 		default:
 			return vector<uint32_t>();
 		}
 	}
 
-	virtual vector<uint32_t> GetFlagsRequiredForSemanticFlagGroup(uint32_t semGroup) override
+	switch (cond)
 	{
-		switch (semGroup)
-		{
-		case IL_FLAG_GROUP_E:
-		case IL_FLAG_GROUP_NE:
-			return vector<uint32_t>{ IL_FLAG_Z };
-		case IL_FLAG_GROUP_LT:
-		case IL_FLAG_GROUP_GE:
-			return vector<uint32_t>{ IL_FLAG_C };
-		case IL_FLAG_GROUP_LE:
-		case IL_FLAG_GROUP_GT:
-			return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_Z };
-		case IL_FLAG_GROUP_PE:
-		case IL_FLAG_GROUP_PO:
-			return vector<uint32_t>{ IL_FLAG_P };
-		default:
-			return vector<uint32_t>();
-		}
+	case LLFC_E:
+	case LLFC_NE:
+	case LLFC_FE:
+	case LLFC_FNE:
+		return vector<uint32_t>{ IL_FLAG_Z };
+	case LLFC_SLT:
+	case LLFC_SGE:
+		return vector<uint32_t>{ IL_FLAG_S, IL_FLAG_O };
+	case LLFC_ULT:
+	case LLFC_UGE:
+	case LLFC_FLT:
+	case LLFC_FGE:
+		return vector<uint32_t>{ IL_FLAG_C };
+	case LLFC_SLE:
+	case LLFC_SGT:
+		return vector<uint32_t>{ IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
+	case LLFC_ULE:
+	case LLFC_UGT:
+	case LLFC_FLE:
+	case LLFC_FGT:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_Z };
+	case LLFC_NEG:
+	case LLFC_POS:
+		return vector<uint32_t>{ IL_FLAG_S };
+	case LLFC_O:
+	case LLFC_NO:
+		return vector<uint32_t>{ IL_FLAG_O };
+	case LLFC_FO:
+	case LLFC_FUO:
+		return vector<uint32_t>{ IL_FLAG_P };
+	default:
+		return vector<uint32_t>();
 	}
+}
 
-	virtual map<uint32_t, BNLowLevelILFlagCondition> GetFlagConditionsForSemanticFlagGroup(uint32_t semGroup) override
+vector<uint32_t> X86CommonArchitecture::GetFlagsRequiredForSemanticFlagGroup(uint32_t semGroup)
+{
+	switch (semGroup)
 	{
-		switch (semGroup)
-		{
-		case IL_FLAG_GROUP_E:
-			return map<uint32_t, BNLowLevelILFlagCondition> {
-				{IL_FLAG_CLASS_INT, LLFC_E},
-				{IL_FLAG_CLASS_X87COMI, LLFC_FE}
-			};
-		case IL_FLAG_GROUP_NE:
-			return map<uint32_t, BNLowLevelILFlagCondition> {
-				{IL_FLAG_CLASS_INT, LLFC_NE},
-				{IL_FLAG_CLASS_X87COMI, LLFC_FNE}
-			};
-		case IL_FLAG_GROUP_LT:
-			return map<uint32_t, BNLowLevelILFlagCondition> {
-				{IL_FLAG_CLASS_INT, LLFC_ULT},
-				{IL_FLAG_CLASS_X87COMI, LLFC_FLT}
-			};
-		case IL_FLAG_GROUP_LE:
-			return map<uint32_t, BNLowLevelILFlagCondition> {
-				{IL_FLAG_CLASS_INT, LLFC_ULE},
-				{IL_FLAG_CLASS_X87COMI, LLFC_FLE}
-			};
-		case IL_FLAG_GROUP_GE:
-			return map<uint32_t, BNLowLevelILFlagCondition> {
-				{IL_FLAG_CLASS_INT, LLFC_UGE},
-				{IL_FLAG_CLASS_X87COMI, LLFC_FGE}
-			};
-		case IL_FLAG_GROUP_GT:
-			return map<uint32_t, BNLowLevelILFlagCondition> {
-				{IL_FLAG_CLASS_INT, LLFC_UGT},
-				{IL_FLAG_CLASS_X87COMI, LLFC_FGT}
-			};
-		case IL_FLAG_GROUP_PE:
-			return map<uint32_t, BNLowLevelILFlagCondition> {
-				{IL_FLAG_CLASS_X87COMI, LLFC_FUO}
-			};
-		case IL_FLAG_GROUP_PO:
-			return map<uint32_t, BNLowLevelILFlagCondition> {
-				{IL_FLAG_CLASS_X87COMI, LLFC_FO}
-			};
-		default:
-			return map<uint32_t, BNLowLevelILFlagCondition>();
-		}
+	case IL_FLAG_GROUP_E:
+	case IL_FLAG_GROUP_NE:
+		return vector<uint32_t>{ IL_FLAG_Z };
+	case IL_FLAG_GROUP_LT:
+	case IL_FLAG_GROUP_GE:
+		return vector<uint32_t>{ IL_FLAG_C };
+	case IL_FLAG_GROUP_LE:
+	case IL_FLAG_GROUP_GT:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_Z };
+	case IL_FLAG_GROUP_PE:
+	case IL_FLAG_GROUP_PO:
+		return vector<uint32_t>{ IL_FLAG_P };
+	default:
+		return vector<uint32_t>();
 	}
+}
 
-	virtual vector<uint32_t> GetFlagsWrittenByFlagWriteType(uint32_t writeType) override
+map<uint32_t, BNLowLevelILFlagCondition> X86CommonArchitecture::GetFlagConditionsForSemanticFlagGroup(uint32_t semGroup)
+{
+	switch (semGroup)
 	{
-		switch (writeType)
-		{
-		case IL_FLAGWRITE_ALL:
-			return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
-		case IL_FLAGWRITE_NOCARRY:
-			return vector<uint32_t>{ IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
-		case IL_FLAGWRITE_CO:
-			return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_O };
-		case IL_FLAGWRITE_X87COM:
-			return vector<uint32_t>{ IL_FLAG_C0, IL_FLAG_C1, IL_FLAG_C2, IL_FLAG_C3 };
-		case IL_FLAGWRITE_X87COMI:
-			return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_Z, IL_FLAG_P };
-		case IL_FLAGWRITE_X87C1Z:
-		case IL_FLAGWRITE_X87RND:
-			return vector<uint32_t>{ IL_FLAG_C1 };
-		default:
-			return vector<uint32_t>();
-		}
+	case IL_FLAG_GROUP_E:
+		return map<uint32_t, BNLowLevelILFlagCondition> {
+			{IL_FLAG_CLASS_INT, LLFC_E},
+			{IL_FLAG_CLASS_X87COMI, LLFC_FE}
+		};
+	case IL_FLAG_GROUP_NE:
+		return map<uint32_t, BNLowLevelILFlagCondition> {
+			{IL_FLAG_CLASS_INT, LLFC_NE},
+			{IL_FLAG_CLASS_X87COMI, LLFC_FNE}
+		};
+	case IL_FLAG_GROUP_LT:
+		return map<uint32_t, BNLowLevelILFlagCondition> {
+			{IL_FLAG_CLASS_INT, LLFC_ULT},
+			{IL_FLAG_CLASS_X87COMI, LLFC_FLT}
+		};
+	case IL_FLAG_GROUP_LE:
+		return map<uint32_t, BNLowLevelILFlagCondition> {
+			{IL_FLAG_CLASS_INT, LLFC_ULE},
+			{IL_FLAG_CLASS_X87COMI, LLFC_FLE}
+		};
+	case IL_FLAG_GROUP_GE:
+		return map<uint32_t, BNLowLevelILFlagCondition> {
+			{IL_FLAG_CLASS_INT, LLFC_UGE},
+			{IL_FLAG_CLASS_X87COMI, LLFC_FGE}
+		};
+	case IL_FLAG_GROUP_GT:
+		return map<uint32_t, BNLowLevelILFlagCondition> {
+			{IL_FLAG_CLASS_INT, LLFC_UGT},
+			{IL_FLAG_CLASS_X87COMI, LLFC_FGT}
+		};
+	case IL_FLAG_GROUP_PE:
+		return map<uint32_t, BNLowLevelILFlagCondition> {
+			{IL_FLAG_CLASS_X87COMI, LLFC_FUO}
+		};
+	case IL_FLAG_GROUP_PO:
+		return map<uint32_t, BNLowLevelILFlagCondition> {
+			{IL_FLAG_CLASS_X87COMI, LLFC_FO}
+		};
+	default:
+		return map<uint32_t, BNLowLevelILFlagCondition>();
 	}
+}
 
-	virtual string GetRegisterStackName(uint32_t regStack) override
+vector<uint32_t> X86CommonArchitecture::GetFlagsWrittenByFlagWriteType(uint32_t writeType)
+{
+	switch (writeType)
 	{
-		if (regStack == REG_STACK_X87)
-			return "x87";
-		return "";
+	case IL_FLAGWRITE_ALL:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
+	case IL_FLAGWRITE_NOCARRY:
+		return vector<uint32_t>{ IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
+	case IL_FLAGWRITE_CO:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_O };
+	case IL_FLAGWRITE_X87COM:
+		return vector<uint32_t>{ IL_FLAG_C0, IL_FLAG_C1, IL_FLAG_C2, IL_FLAG_C3 };
+	case IL_FLAGWRITE_X87COMI:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_Z, IL_FLAG_P };
+	case IL_FLAGWRITE_X87C1Z:
+	case IL_FLAGWRITE_X87RND:
+		return vector<uint32_t>{ IL_FLAG_C1 };
+	default:
+		return vector<uint32_t>();
 	}
+}
 
-	virtual vector<uint32_t> GetAllRegisterStacks() override
+string X86CommonArchitecture::GetRegisterStackName(uint32_t regStack)
+{
+	if (regStack == REG_STACK_X87)
+		return "x87";
+	return "";
+}
+
+vector<uint32_t> X86CommonArchitecture::GetAllRegisterStacks()
+{
+	return vector<uint32_t>{REG_STACK_X87};
+}
+
+BNRegisterStackInfo X86CommonArchitecture::GetRegisterStackInfo(uint32_t regStack)
+{
+	if (regStack == REG_STACK_X87)
 	{
-		return vector<uint32_t>{REG_STACK_X87};
+		BNRegisterStackInfo result;
+		result.firstStorageReg = REG_X87_r(0);
+		result.storageCount = 8;
+		result.firstTopRelativeReg = XED_REG_ST0;
+		result.topRelativeCount = 8;
+		result.stackTopReg = REG_X87_TOP;
+		return result;
 	}
+	return Architecture::GetRegisterStackInfo(regStack);
+}
 
-	virtual BNRegisterStackInfo GetRegisterStackInfo(uint32_t regStack) override
+bool X86CommonArchitecture::Assemble(const string& code, uint64_t addr, DataBuffer& result, string& errors)
+{
+	string finalCode;
+
+	if (GetAddressSizeBits() == 32)
+		finalCode = "\tsection .text align=1\n\tbits 32\n";
+	else
+		finalCode = "\tsection .text align=1\n\tbits 64\n";
+
+	char orgStr[32];
+	sprintf(orgStr, "\torg 0x%" PRIx64 "\n", addr);
+	finalCode += orgStr;
+
+	finalCode += "%line 0 input\n";
+	finalCode += code;
+
+	Ref<TemporaryFile> inputFile = new TemporaryFile(finalCode);
+	Ref<TemporaryFile> outputFile = new TemporaryFile();
+	if (!inputFile->IsValid())
 	{
-		if (regStack == REG_STACK_X87)
-		{
-			BNRegisterStackInfo result;
-			result.firstStorageReg = REG_X87_r(0);
-			result.storageCount = 8;
-			result.firstTopRelativeReg = XED_REG_ST0;
-			result.topRelativeCount = 8;
-			result.stackTopReg = REG_X87_TOP;
-			return result;
-		}
-		return Architecture::GetRegisterStackInfo(regStack);
+		errors = "Unable to create temporary file for input\n";
+		return false;
 	}
-
-	virtual string GetIntrinsicName(uint32_t intrinsic) override
+	if (!outputFile->IsValid())
 	{
-		switch (intrinsic)
-		{
-		case INTRINSIC_F2XM1:
-			return "__f2xm1";
-		case INTRINSIC_FBLD:
-			return "__fbld";
-		case INTRINSIC_FBST:
-			return "__fbst";
-		case INTRINSIC_FSIN:
-			return "__fsin";
-		case INTRINSIC_FCOS:
-			return "__fcos";
-		case INTRINSIC_FSINCOS:
-			return "__fsincos";
-		case INTRINSIC_FPATAN:
-			return "__fpatan";
-		case INTRINSIC_FPREM:
-			return "__fprem";
-		case INTRINSIC_FPREM1:
-			return "__fprem1";
-		case INTRINSIC_FPTAN:
-			return "__fptan";
-		case INTRINSIC_FSCALE:
-			return "__fscale";
-		case INTRINSIC_FXAM:
-			return "__fxam";
-		case INTRINSIC_FXTRACT:
-			return "__fxtract";
-		case INTRINSIC_FYL2X:
-			return "__fyl2x";
-		case INTRINSIC_FYL2XP1:
-			return "__fyl2xp1";
-		default:
-			return "";
-		}
-	}
-
-	virtual vector<uint32_t> GetAllIntrinsics() override
-	{
-		return vector<uint32_t> { INTRINSIC_F2XM1, INTRINSIC_FBLD, INTRINSIC_FBST , INTRINSIC_FSIN,
-			INTRINSIC_FCOS, INTRINSIC_FSINCOS, INTRINSIC_FPATAN, INTRINSIC_FPREM, INTRINSIC_FPREM1,
-			INTRINSIC_FPTAN, INTRINSIC_FSCALE, INTRINSIC_FXAM, INTRINSIC_FXTRACT, INTRINSIC_FYL2X,
-			INTRINSIC_FYL2XP1 };
-	}
-
-	virtual vector<NameAndType> GetIntrinsicInputs(uint32_t intrinsic) override
-	{
-		switch (intrinsic)
-		{
-		case INTRINSIC_F2XM1:
-		case INTRINSIC_FBST:
-		case INTRINSIC_FSIN:
-		case INTRINSIC_FCOS:
-		case INTRINSIC_FSINCOS:
-		case INTRINSIC_FPTAN:
-		case INTRINSIC_FXAM:
-		case INTRINSIC_FXTRACT:
-			return vector<NameAndType> { NameAndType(Type::FloatType(10)) };
-		case INTRINSIC_FBLD:
-			return vector<NameAndType> { NameAndType(Type::IntegerType(10, false)) };
-		case INTRINSIC_FPATAN:
-		case INTRINSIC_FYL2X:
-		case INTRINSIC_FYL2XP1:
-			return vector<NameAndType> { NameAndType("x", Type::FloatType(10)), NameAndType("y", Type::FloatType(10)) };
-		case INTRINSIC_FPREM:
-		case INTRINSIC_FPREM1:
-		case INTRINSIC_FSCALE:
-			return vector<NameAndType> { NameAndType(Type::FloatType(10)), NameAndType(Type::FloatType(10)) };
-		default:
-			return vector<NameAndType>();
-		}
-	}
-
-	virtual vector<Confidence<Ref<Type>>> GetIntrinsicOutputs(uint32_t intrinsic) override
-	{
-		switch (intrinsic)
-		{
-		case INTRINSIC_F2XM1:
-		case INTRINSIC_FBLD:
-		case INTRINSIC_FPATAN:
-		case INTRINSIC_FSCALE:
-		case INTRINSIC_FYL2X:
-		case INTRINSIC_FYL2XP1:
-			return vector<Confidence<Ref<Type>>> { Type::FloatType(10) };
-		case INTRINSIC_FBST:
-			return vector<Confidence<Ref<Type>>> { Type::IntegerType(10, false) };
-		case INTRINSIC_FSIN:
-		case INTRINSIC_FCOS:
-		case INTRINSIC_FPTAN:
-			return vector<Confidence<Ref<Type>>> { Type::FloatType(10), Type::BoolType() };
-		case INTRINSIC_FSINCOS:
-			return vector<Confidence<Ref<Type>>> { Type::FloatType(10), Type::FloatType(10), Type::BoolType() };
-		case INTRINSIC_FPREM:
-		case INTRINSIC_FPREM1:
-			return vector<Confidence<Ref<Type>>> { Type::FloatType(10), Type::BoolType(), Type::IntegerType(1, false) };
-		case INTRINSIC_FXAM:
-			return vector<Confidence<Ref<Type>>> { Type::BoolType(), Type::BoolType(), Type::BoolType(), Type::BoolType() };
-		case INTRINSIC_FXTRACT:
-			return vector<Confidence<Ref<Type>>> { Type::FloatType(10), Type::FloatType(10) };
-		default:
-			return vector<Confidence<Ref<Type>>>();
-		}
-	}
-
-	virtual bool Assemble(const string& code, uint64_t addr, DataBuffer& result, string& errors) override
-	{
-		string finalCode;
-
-		if (GetAddressSizeBits() == 32)
-			finalCode = "\tsection .text align=1\n\tbits 32\n";
-		else
-			finalCode = "\tsection .text align=1\n\tbits 64\n";
-
-		char orgStr[32];
-		sprintf(orgStr, "\torg 0x%" PRIx64 "\n", addr);
-		finalCode += orgStr;
-
-		finalCode += "%line 0 input\n";
-		finalCode += code;
-
-		Ref<TemporaryFile> inputFile = new TemporaryFile(finalCode);
-		Ref<TemporaryFile> outputFile = new TemporaryFile();
-		if (!inputFile->IsValid())
-		{
-			errors = "Unable to create temporary file for input\n";
-			return false;
-		}
-		if (!outputFile->IsValid())
-		{
-			errors = "Unable to create temporary file for output\n";
-			return false;
-		}
-
-		#ifdef WIN32
-			string yasmPath = GetPathRelativeToBundledPluginDirectory("yasm.exe");
-		#else
-			string yasmPath = GetPathRelativeToBundledPluginDirectory("yasm");
-		#endif
-
-		string inputPath = inputFile->GetPath();
-		string outputPath = outputFile->GetPath();
-
-		vector<string> args = vector<string> { yasmPath, "-fbin", "-w", "-Worphan-labels", "-Werror", "-o", outputPath, inputPath };
-
-		string output;
-		bool ok = ExecuteWorkerProcess(yasmPath, args, DataBuffer(),
-			output,  // _binary_ stdout is ignored
-			errors,  // _text_ stderr becomes the error message
-			false,  // yasm stdout is ignored (stay with default: no newline translate)
-			true  // yasm stderr is known to be text (translate newlines)
-		);
-
-		if(!ok)
-		{
-			/* when there was a problem creating the yasm process
-				OR the yasm process return code was nonzero */
-			if(errors.size() == 0)
-			{
-				errors = yasmPath + " returned nonzero\n";
-			}
-		}
-		else
-		{
-			result = outputFile->GetContents(); /* assembled bytes */
-			if(result.GetLength() == 0)
-			{
-				errors = "Empty output from assembler\n";
-				ok = false;
-			}
-		}
-
-		return ok;
-	}
-
-	virtual bool IsNeverBranchPatchAvailable(const uint8_t* data, uint64_t, size_t len) override
-	{
-		xed_decoded_inst_t xedd;
-		switch (m_bits)
-		{
-		case 64:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-			break;
-		case 32:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
-			break;
-		case 16:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
-			break;
-		default:
-			LogError("Invalid Processor Mode");
-			return false;
-		}
-
-		if (!Decode(data, len, &xedd))
-			return false;
-		return IsConditionalJump(&xedd);
-	}
-
-	virtual bool IsAlwaysBranchPatchAvailable(const uint8_t* data, uint64_t, size_t len) override
-	{
-		xed_decoded_inst_t xedd;
-		switch (m_bits)
-		{
-		case 64:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-			break;
-		case 32:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
-			break;
-		case 16:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
-			break;
-		default:
-			LogError("Invalid Processor Mode");
-			return false;
-		}
-		if (!Decode(data, len, &xedd))
-			return false;
-		return IsConditionalJump(&xedd);
-	}
-
-	virtual bool IsInvertBranchPatchAvailable(const uint8_t* data, uint64_t, size_t len) override
-	{
-		xed_decoded_inst_t xedd;
-		switch (m_bits)
-		{
-		case 64:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-			break;
-		case 32:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
-			break;
-		case 16:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
-			break;
-		default:
-			LogError("Invalid Processor Mode");
-			return false;
-		}
-		if (!Decode(data, len, &xedd))
-			return false;
-		return IsConditionalJump(&xedd);
-	}
-
-	virtual bool IsSkipAndReturnZeroPatchAvailable(const uint8_t* data, uint64_t, size_t len) override
-	{
-		xed_decoded_inst_t xedd;
-		switch (m_bits)
-		{
-		case 64:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-			break;
-		case 32:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
-			break;
-		case 16:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
-			break;
-		default:
-			LogError("Invalid Processor Mode");
-			return false;
-		}
-		if (!Decode(data, len, &xedd))
-			return false;
-		return xed_decoded_inst_get_category(&xedd) == XED_CATEGORY_CALL;
-	}
-
-	virtual bool IsSkipAndReturnValuePatchAvailable(const uint8_t* data, uint64_t, size_t len) override
-	{
-		xed_decoded_inst_t xedd;
-		switch (m_bits)
-		{
-		case 64:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
-			break;
-		case 32:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
-			break;
-		case 16:
-			xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
-			break;
-		default:
-			LogError("Invalid Processor Mode");
-			return false;
-		}
-		if (!Decode(data, len, &xedd))
-			return false;
-		return (xed_decoded_inst_get_category(&xedd) == XED_CATEGORY_CALL) && (xed_decoded_inst_get_length(&xedd) >= 5);
-	}
-
-	virtual bool ConvertToNop(uint8_t* data, uint64_t, size_t len) override
-	{
-		memset(data, 0x90, len);
-		return true;
-	}
-
-	size_t FindOpcodeOffset(const uint8_t* data, size_t len)
-	{
-		size_t i;
-		for (i = 0; i < len; i++)
-		{
-			if ((data[0] >= 0x26) && (data[0] <= 0x3e) && ((data[0] & 7) == 6)) // Segment prefix
-				continue;
-			if ((data[0] >= 0x64) && (data[0] <= 0x67)) // FS/GS prefix and size overrides
-				continue;
-			if (data[0] == 0xf0) // Lock prefix
-				continue;
-			if ((data[0] == 0xf2) || (data[0] == 0xf3)) // Rep prefixes
-				continue;
-			if ((GetAddressSizeBits() == 64) && (data[0] >= 0x40) && (data[0] <= 0x4f)) // REX prefix
-			    continue;
-			break;
-		}
-		return i;
-	}
-
-	virtual bool AlwaysBranch(uint8_t* data, uint64_t, size_t len) override
-	{
-		size_t i = FindOpcodeOffset(data, len);
-		if (i >= len)
-			return false;
-
-		if ((len - i) == 2)
-		{
-			data[i] = 0xeb;
-			return true;
-		}
-
-		if ((len - i) == 5)
-		{
-			data[i] = 0xe9;
-			return true;
-		}
-
-		if ((len - i) > 5)
-		{
-			memmove(&data[(len - i) - 5], data, i);
-			memset(data, 0x90, (len - i) - 5);
-			data[len - 5] = 0xe9;
-			return true;
-		}
-
+		errors = "Unable to create temporary file for output\n";
 		return false;
 	}
 
-	virtual bool InvertBranch(uint8_t* data, uint64_t, size_t len) override
+	#ifdef WIN32
+		string yasmPath = GetPathRelativeToBundledPluginDirectory("yasm.exe");
+	#else
+		string yasmPath = GetPathRelativeToBundledPluginDirectory("yasm");
+	#endif
+
+	string inputPath = inputFile->GetPath();
+	string outputPath = outputFile->GetPath();
+
+	vector<string> args = vector<string> { yasmPath, "-fbin", "-w", "-Worphan-labels", "-Werror", "-o", outputPath, inputPath };
+
+	string output;
+	bool ok = ExecuteWorkerProcess(yasmPath, args, DataBuffer(),
+		output,  // _binary_ stdout is ignored
+		errors,  // _text_ stderr becomes the error message
+		false,  // yasm stdout is ignored (stay with default: no newline translate)
+		true  // yasm stderr is known to be text (translate newlines)
+	);
+
+	if(!ok)
 	{
-		size_t i = FindOpcodeOffset(data, len);
-		if (i >= len)
-			return false;
-
-		if (data[i] == 0x0f)
+		/* when there was a problem creating the yasm process
+			OR the yasm process return code was nonzero */
+		if(errors.size() == 0)
 		{
-			if ((i + 1) >= len)
-				return false;
-			data[i + 1] ^= 1;
-			return true;
+			errors = yasmPath + " returned nonzero\n";
 		}
+	}
+	else
+	{
+		result = outputFile->GetContents(); /* assembled bytes */
+		if(result.GetLength() == 0)
+		{
+			errors = "Empty output from assembler\n";
+			ok = false;
+		}
+	}
 
-		data[i] ^= 1;
+	return ok;
+}
+
+bool X86CommonArchitecture::IsNeverBranchPatchAvailable(const uint8_t* data, uint64_t, size_t len)
+{
+	xed_decoded_inst_t xedd;
+	switch (m_bits)
+	{
+	case 64:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+		break;
+	case 32:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		break;
+	case 16:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		break;
+	default:
+		LogError("Invalid Processor Mode");
+		return false;
+	}
+
+	if (!Decode(data, len, &xedd))
+		return false;
+	return IsConditionalJump(&xedd);
+}
+
+bool X86CommonArchitecture::IsAlwaysBranchPatchAvailable(const uint8_t* data, uint64_t, size_t len)
+{
+	xed_decoded_inst_t xedd;
+	switch (m_bits)
+	{
+	case 64:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+		break;
+	case 32:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		break;
+	case 16:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		break;
+	default:
+		LogError("Invalid Processor Mode");
+		return false;
+	}
+	if (!Decode(data, len, &xedd))
+		return false;
+	return IsConditionalJump(&xedd);
+}
+
+bool X86CommonArchitecture::IsInvertBranchPatchAvailable(const uint8_t* data, uint64_t, size_t len)
+{
+	xed_decoded_inst_t xedd;
+	switch (m_bits)
+	{
+	case 64:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+		break;
+	case 32:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		break;
+	case 16:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		break;
+	default:
+		LogError("Invalid Processor Mode");
+		return false;
+	}
+	if (!Decode(data, len, &xedd))
+		return false;
+	return IsConditionalJump(&xedd);
+}
+
+bool X86CommonArchitecture::IsSkipAndReturnZeroPatchAvailable(const uint8_t* data, uint64_t, size_t len)
+{
+	xed_decoded_inst_t xedd;
+	switch (m_bits)
+	{
+	case 64:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+		break;
+	case 32:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		break;
+	case 16:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		break;
+	default:
+		LogError("Invalid Processor Mode");
+		return false;
+	}
+	if (!Decode(data, len, &xedd))
+		return false;
+	return xed_decoded_inst_get_category(&xedd) == XED_CATEGORY_CALL;
+}
+
+bool X86CommonArchitecture::IsSkipAndReturnValuePatchAvailable(const uint8_t* data, uint64_t, size_t len)
+{
+	xed_decoded_inst_t xedd;
+	switch (m_bits)
+	{
+	case 64:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LONG_64, XED_ADDRESS_WIDTH_64b);
+		break;
+	case 32:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_32, XED_ADDRESS_WIDTH_32b);
+		break;
+	case 16:
+		xed_decoded_inst_set_mode(&xedd, XED_MACHINE_MODE_LEGACY_16, XED_ADDRESS_WIDTH_16b);
+		break;
+	default:
+		LogError("Invalid Processor Mode");
+		return false;
+	}
+	if (!Decode(data, len, &xedd))
+		return false;
+	return (xed_decoded_inst_get_category(&xedd) == XED_CATEGORY_CALL) && (xed_decoded_inst_get_length(&xedd) >= 5);
+}
+
+bool X86CommonArchitecture::ConvertToNop(uint8_t* data, uint64_t, size_t len)
+{
+	memset(data, 0x90, len);
+	return true;
+}
+
+size_t X86CommonArchitecture::FindOpcodeOffset(const uint8_t* data, size_t len)
+{
+	size_t i;
+	for (i = 0; i < len; i++)
+	{
+		if ((data[0] >= 0x26) && (data[0] <= 0x3e) && ((data[0] & 7) == 6)) // Segment prefix
+			continue;
+		if ((data[0] >= 0x64) && (data[0] <= 0x67)) // FS/GS prefix and size overrides
+			continue;
+		if (data[0] == 0xf0) // Lock prefix
+			continue;
+		if ((data[0] == 0xf2) || (data[0] == 0xf3)) // Rep prefixes
+			continue;
+		if ((GetAddressSizeBits() == 64) && (data[0] >= 0x40) && (data[0] <= 0x4f)) // REX prefix
+			continue;
+		break;
+	}
+	return i;
+}
+
+bool X86CommonArchitecture::AlwaysBranch(uint8_t* data, uint64_t, size_t len)
+{
+	size_t i = FindOpcodeOffset(data, len);
+	if (i >= len)
+		return false;
+
+	if ((len - i) == 2)
+	{
+		data[i] = 0xeb;
 		return true;
 	}
 
-	virtual bool SkipAndReturnValue(uint8_t* data, uint64_t, size_t len, uint64_t value) override
+	if ((len - i) == 5)
 	{
-		if (len >= 5)
-		{
-			data[0] = 0xb8;
-			*(uint32_t*)&data[1] = (uint32_t)value;
-			memset(&data[5], 0x90, len - 5);
-			return true;
-		}
-
-		if ((value == 0) && (len >= 2))
-		{
-			// xor eax, eax
-			data[0] = 0x31;
-			data[1] = 0xc0;
-			memset(&data[2], 0x90, len - 2);
-			return true;
-		}
-
-		return false;
+		data[i] = 0xe9;
+		return true;
 	}
-};
+
+	if ((len - i) > 5)
+	{
+		memmove(&data[(len - i) - 5], data, i);
+		memset(data, 0x90, (len - i) - 5);
+		data[len - 5] = 0xe9;
+		return true;
+	}
+
+	return false;
+}
+
+bool X86CommonArchitecture::InvertBranch(uint8_t* data, uint64_t, size_t len)
+{
+	size_t i = FindOpcodeOffset(data, len);
+	if (i >= len)
+		return false;
+
+	if (data[i] == 0x0f)
+	{
+		if ((i + 1) >= len)
+			return false;
+		data[i + 1] ^= 1;
+		return true;
+	}
+
+	data[i] ^= 1;
+	return true;
+}
+
+bool X86CommonArchitecture::SkipAndReturnValue(uint8_t* data, uint64_t, size_t len, uint64_t value)
+{
+	if (len >= 5)
+	{
+		data[0] = 0xb8;
+		*(uint32_t*)&data[1] = (uint32_t)value;
+		memset(&data[5], 0x90, len - 5);
+		return true;
+	}
+
+	if ((value == 0) && (len >= 2))
+	{
+		// xor eax, eax
+		data[0] = 0x31;
+		data[1] = 0xc0;
+		memset(&data[2], 0x90, len - 2);
+		return true;
+	}
+
+	return false;
+}
 
 
 class X86Architecture: public X86CommonArchitecture
