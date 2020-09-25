@@ -2572,6 +2572,11 @@ public:
 		}
 	}
 
+	virtual bool CanAssemble() override
+	{
+		return true;
+	}
+
 	virtual bool Assemble(const string& code, uint64_t addr, DataBuffer& result, string& errors) override
 	{
 		string finalCode;
