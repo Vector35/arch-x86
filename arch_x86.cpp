@@ -2783,6 +2783,10 @@ public:
 
    			XED_REG_MXCSR,  // 32+ SSE (MMX) Control Reg (32 on 32, 64 on 64)
 
+			// x87 FPU related
+			REG_X87_TOP, XED_REG_X87CONTROL, XED_REG_X87STATUS, XED_REG_X87TAG, XED_REG_X87OPCODE, XED_REG_X87LASTCS,
+			XED_REG_X87LASTDS, XED_REG_X87LASTIP, XED_REG_X87LASTDP, XED_REG_X87PUSH, XED_REG_X87POP, XED_REG_X87POP2,
+
 			// 48-Bit (All 32+)
 			XED_REG_GDTR,  // Global Descriptor Table Register
 			XED_REG_LDTR,  // Local Descriptor Table Register
@@ -2815,6 +2819,8 @@ public:
 			XED_REG_AX, XED_REG_CX, XED_REG_DX, XED_REG_BX,  // 16+
 
 			REG_X87_TOP, // 32+
+			XED_REG_X87CONTROL, XED_REG_X87STATUS, XED_REG_X87TAG, XED_REG_X87PUSH, XED_REG_X87POP,
+			XED_REG_X87POP2, XED_REG_X87OPCODE, XED_REG_X87LASTCS, XED_REG_X87LASTIP, XED_REG_X87LASTDS, XED_REG_X87LASTDP,
 
 			// 32-Bit
 			XED_REG_EIP,  // 32+
@@ -2907,7 +2913,18 @@ public:
 
 		case XED_REG_TR:     return RegisterInfo(XED_REG_TR, 0, 4);
 
-		case REG_X87_TOP:    return RegisterInfo((xed_reg_enum_t)REG_X87_TOP, 0, 2);
+		case REG_X87_TOP:              return RegisterInfo((xed_reg_enum_t)REG_X87_TOP, 0, 2);
+		case XED_REG_X87CONTROL:       return RegisterInfo(XED_REG_X87CONTROL, 0, 2);
+		case XED_REG_X87STATUS:        return RegisterInfo(XED_REG_X87STATUS, 0, 2);
+		case XED_REG_X87TAG:           return RegisterInfo(XED_REG_X87TAG, 0, 2);
+		case XED_REG_X87OPCODE:        return RegisterInfo(XED_REG_X87OPCODE, 0, 2);
+		case XED_REG_X87LASTCS:        return RegisterInfo(XED_REG_X87LASTCS, 0, 2);
+		case XED_REG_X87LASTDS:        return RegisterInfo(XED_REG_X87LASTDS, 0, 2);
+		case XED_REG_X87LASTIP:        return RegisterInfo(XED_REG_X87LASTIP, 0, 4);
+		case XED_REG_X87LASTDP:        return RegisterInfo(XED_REG_X87LASTDP, 0, 4);
+		case XED_REG_X87PUSH:          return RegisterInfo(XED_REG_X87PUSH, 0, 4);
+		case XED_REG_X87POP:           return RegisterInfo(XED_REG_X87POP, 0, 4);
+		case XED_REG_X87POP2:          return RegisterInfo(XED_REG_X87POP2, 0, 4);
 
 		case XED_REG_CR0:    return RegisterInfo(XED_REG_CR0, 0, 4);
 		case XED_REG_CR1:    return RegisterInfo(XED_REG_CR1, 0, 4);
@@ -3105,6 +3122,10 @@ public:
 			XED_REG_CS, XED_REG_DS, XED_REG_ES, XED_REG_SS, XED_REG_FS, XED_REG_GS, XED_REG_FSBASE, XED_REG_GSBASE,  // 16+
 			XED_REG_SP, XED_REG_BP, XED_REG_SI, XED_REG_DI,  // 16+
 
+			// x87 FPU related
+			REG_X87_TOP, XED_REG_X87CONTROL, XED_REG_X87STATUS, XED_REG_X87TAG, XED_REG_X87OPCODE, XED_REG_X87LASTCS,
+			XED_REG_X87LASTDS, XED_REG_X87LASTIP, XED_REG_X87LASTDP, XED_REG_X87PUSH, XED_REG_X87POP, XED_REG_X87POP2,
+
 			// 48-Bit (All 32+)
 			XED_REG_GDTR,  // Global Descriptor Table Register
 			XED_REG_LDTR,  // Local Descriptor Table Register
@@ -3156,6 +3177,8 @@ public:
 			XED_REG_FLAGS,  // 16+
 
 			REG_X87_TOP, // 32+
+			XED_REG_X87CONTROL, XED_REG_X87STATUS, XED_REG_X87TAG, XED_REG_X87PUSH, XED_REG_X87POP,
+			XED_REG_X87POP2, XED_REG_X87OPCODE, XED_REG_X87LASTCS, XED_REG_X87LASTIP, XED_REG_X87LASTDS, XED_REG_X87LASTDP,
 
 			XED_REG_AX, XED_REG_CX, XED_REG_DX, XED_REG_BX,  // 16+
 			XED_REG_R8W, XED_REG_R9W, XED_REG_R10W, XED_REG_R11W, XED_REG_R12W, XED_REG_R13W, XED_REG_R14W, XED_REG_R15W,  // 64+
@@ -3277,7 +3300,18 @@ public:
 		case XED_REG_ESI:       return RegisterInfo(XED_REG_RSI, 0, 4, true);
 		case XED_REG_EDI:       return RegisterInfo(XED_REG_RDI, 0, 4, true);
 
-		case REG_X87_TOP:      return RegisterInfo((xed_reg_enum_t)REG_X87_TOP, 0, 2);
+		case REG_X87_TOP:              return RegisterInfo((xed_reg_enum_t)REG_X87_TOP, 0, 2);
+		case XED_REG_X87CONTROL:       return RegisterInfo(XED_REG_X87CONTROL, 0, 2);
+		case XED_REG_X87STATUS:        return RegisterInfo(XED_REG_X87STATUS, 0, 2);
+		case XED_REG_X87TAG:           return RegisterInfo(XED_REG_X87TAG, 0, 2);
+		case XED_REG_X87OPCODE:        return RegisterInfo(XED_REG_X87OPCODE, 0, 2);
+		case XED_REG_X87LASTCS:        return RegisterInfo(XED_REG_X87LASTCS, 0, 2);
+		case XED_REG_X87LASTDS:        return RegisterInfo(XED_REG_X87LASTDS, 0, 2);
+		case XED_REG_X87LASTIP:        return RegisterInfo(XED_REG_X87LASTIP, 0, 8);
+		case XED_REG_X87LASTDP:        return RegisterInfo(XED_REG_X87LASTDP, 0, 8);
+		case XED_REG_X87PUSH:          return RegisterInfo(XED_REG_X87PUSH, 0, 8);
+		case XED_REG_X87POP:           return RegisterInfo(XED_REG_X87POP, 0, 8);
+		case XED_REG_X87POP2:          return RegisterInfo(XED_REG_X87POP2, 0, 8);
 
 		case XED_REG_EFLAGS:    return RegisterInfo(XED_REG_RFLAGS, 0, 4, true);
 
