@@ -1449,14 +1449,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 	}
 
-	case XED_ICLASS_CPUID:
-		il.AddInstruction(il.Register(4, XED_REG_EAX));
-		il.AddInstruction(il.SetRegister(4, XED_REG_EAX, il.Unimplemented()));
-		il.AddInstruction(il.SetRegister(4, XED_REG_EBX, il.Unimplemented()));
-		il.AddInstruction(il.SetRegister(4, XED_REG_ECX, il.Unimplemented()));
-		il.AddInstruction(il.SetRegister(4, XED_REG_EDX, il.Unimplemented()));
-		break;
-
 	case XED_ICLASS_CQO:
 		il.AddInstruction(il.SetRegisterSplit(8, XED_REG_RDX, XED_REG_RAX, il.SignExtend(16, il.Register(8, XED_REG_RAX))));
 		break;
@@ -2443,10 +2435,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		break;
 
-	case XED_ICLASS_XGETBV:
-		il.AddInstruction(il.SetRegisterSplit(4, XED_REG_EDX, XED_REG_EAX, il.Unimplemented()));
-		break;
-
 	case XED_ICLASS_REP_MOVSB:
 	case XED_ICLASS_REP_MOVSW:
 	case XED_ICLASS_REP_MOVSD:
@@ -2814,10 +2802,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
 				il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
-		break;
-
-	case XED_ICLASS_RDTSC:
-		il.AddInstruction(il.SetRegisterSplit(4, XED_REG_EDX, XED_REG_EAX, il.Unimplemented()));
 		break;
 
 	case XED_ICLASS_RET_NEAR:
@@ -3424,25 +3408,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_SYSCALL:
 	case XED_ICLASS_SYSENTER:
 		il.AddInstruction(il.SystemCall());
-		break;
-
-	case XED_ICLASS_REP_INSB:
-	case XED_ICLASS_REP_INSD:
-	case XED_ICLASS_REP_INSW:
-	case XED_ICLASS_REP_OUTSB:
-	case XED_ICLASS_REP_OUTSD:
-	case XED_ICLASS_REP_OUTSW:
-	case XED_ICLASS_IN:
-	case XED_ICLASS_INSB:
-	case XED_ICLASS_INSW:
-	case XED_ICLASS_INSD:
-	case XED_ICLASS_OUTSB:
-	case XED_ICLASS_OUTSW:
-	case XED_ICLASS_OUTSD:
-	case XED_ICLASS_OUT:
-	case XED_ICLASS_CLI:
-	case XED_ICLASS_STI:
-		il.AddInstruction(il.Unimplemented());
 		break;
 
 	case XED_ICLASS_SYSEXIT:
