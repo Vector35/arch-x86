@@ -593,53 +593,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			il.AddInstruction(WriteILOperand(il, xedd, addr, operand, operand,
 				il.Register(openradWidth, LLIL_TEMP(i))));
 		}
-
-		std::unique_lock<std::mutex> intrinsicLock(X86CommonArchitecture::m_intrinsicInputAndOutputLock);
-		if (X86CommonArchitecture::intrinsicInputAndOutput.count(intrinsic) == 0)
-		{
-			xed_extension_enum_t extension = xed_decoded_inst_get_extension(xedd);
-			vector<NameAndType> inputType = vector<NameAndType>();
-			vector<Confidence<Ref<Type>>> outputType = vector<Confidence<Ref<Type>>>();
-			// these are SIMD/vector instructions
-			if ((extension == XED_EXTENSION_AES) || (extension == XED_EXTENSION_AVX) ||
-				(extension == XED_EXTENSION_AVX2) || (extension == XED_EXTENSION_AVX2GATHER) ||
-				(extension == XED_EXTENSION_AVX512EVEX) || (extension == XED_EXTENSION_AVX512VEX) ||
-				(extension == XED_EXTENSION_AVXAES) || (extension == XED_EXTENSION_MMX) ||
-				(extension == XED_EXTENSION_PCLMULQDQ) || (extension == XED_EXTENSION_SHA) ||
-				(extension == XED_EXTENSION_SSE) || (extension == XED_EXTENSION_SSE2) ||
-				(extension == XED_EXTENSION_SSE3) || (extension == XED_EXTENSION_SSE2) ||
-				(extension == XED_EXTENSION_SSE4A) || (extension == XED_EXTENSION_SSSE3) ||
-				(extension == XED_EXTENSION_SSE4A) || (extension == XED_EXTENSION_VIA_PADLOCK_AES) ||
-				(extension == XED_EXTENSION_VIA_PADLOCK_SHA) || (extension == XED_EXTENSION_VPCLMULQDQ)
-			)
-			{
-				for (uint32_t i = 0; i < noperands; i++)
-				{
-					const xed_operand_t* op = xed_inst_operand(xi, i);
-					if (xed_operand_written(op))
-					{
-						size_t n = xed_decoded_inst_operand_elements(xedd, i);
-						size_t bits = xed_decoded_inst_operand_element_size_bits(xedd, i);
-						size_t bytes = (bits + 7) / 8;
-						if (n > 1)
-							outputType.push_back(Type::ArrayType(Type::IntegerType(bytes, false), n));
-						else
-							outputType.push_back(Type::IntegerType(bytes, false));
-					}
-					if (xed_operand_read(op))
-					{
-						size_t n = xed_decoded_inst_operand_elements(xedd, i);
-						size_t bits = xed_decoded_inst_operand_element_size_bits(xedd, i);
-						size_t bytes = (bits + 7) / 8;
-						if (n > 1)
-							inputType.push_back(NameAndType(Type::ArrayType(Type::IntegerType(bytes, false), n)));
-						else
-							inputType.push_back(NameAndType(Type::IntegerType(bytes, false)));
-					}
-				}
-			}
-			X86CommonArchitecture::intrinsicInputAndOutput[intrinsic] = {inputType, outputType};
-		}
 	};
 
 	switch (xedd_iClass)
@@ -4044,8 +3997,11 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32,
 					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
 		else
-			// for 16 bit version of tzcnt
-			LiftAsIntrinsic();
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_TZCNT_GPR16_GPRMEM16,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
 
 		break;
 	}
@@ -4065,12 +4021,39 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				il.Intrinsic(
 					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
 					INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
+		else
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_LZCNT_GPR16_GPRMEM16,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
+
+		break;
+	}
+
+	case XED_ICLASS_POPCNT:
+	{
+		if (opOneLen == 8)
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64,
 					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) }
 				)
 			);
+		else if (opOneLen == 4)
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_POPCNT_GPR32_GPRMEM32,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
 		else
-			// for 16 bit version of tzcnt
-			LiftAsIntrinsic();
+			il.AddInstruction(
+				il.Intrinsic(
+					vector<RegisterOrFlag> { RegisterOrFlag::Register(regOne) },
+					INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16,
+					vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) } ));
 
 		break;
 	}

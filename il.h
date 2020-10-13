@@ -6454,15 +6454,22 @@ enum X86_INTRINSIC
     INTRINSIC_XED_IFORM_LAST,
 
     // Below are modified iforms
-    // They are added to allow GetIntrinsicName() return an accurate intrinsic name
+    // They are added to allow GetIntrinsicName() return an accurate intrinsic name.
     // The old intrinsics (e.g., INTRINSIC_XED_IFORM_TZCNT_GPRv_GPRv),
     // which are copied from xed include file is NOT deleted from above.
     // It is not used since no code will ever emit them.
     // Do NOT remove them since that will break the way we get intrinsic names.
     INTRINSIC_XED_IFORM_TZCNT_GPR64_GPRMEM64,
     INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32,
+    INTRINSIC_XED_IFORM_TZCNT_GPR16_GPRMEM16,
+
     INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64,
     INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32,
+    INTRINSIC_XED_IFORM_LZCNT_GPR16_GPRMEM16,
+
+    INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64,
+    INTRINSIC_XED_IFORM_POPCNT_GPR32_GPRMEM32,
+    INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16,
 
     INTRINSIC_LAST
 };
