@@ -5041,14 +5041,26 @@ string X86CommonArchitecture::GetIntrinsicName(uint32_t intrinsic)
     	return "_xrstors64";
 
     // below are modified iforms
+    case INTRINSIC_XED_IFORM_TZCNT_GPR16_GPRMEM16:
+        return "_tzcnt_u16";
     case INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32:
         return "_tzcnt_u32";
     case INTRINSIC_XED_IFORM_TZCNT_GPR64_GPRMEM64:
         return "_tzcnt_u64";
+
+    case INTRINSIC_XED_IFORM_LZCNT_GPR16_GPRMEM16:
+        return "_lzcnt_u16";
     case INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32:
-        return "_tzcnt_u32";
+        return "_lzcnt_u32";
     case INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64:
-        return "_tzcnt_u64";
+        return "_lzcnt_u64";
+
+    case INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16:
+        return "_popcnt_u16";
+    case INTRINSIC_XED_IFORM_POPCNT_GPR32_GPRMEM32:
+        return "_popcnt_u32";
+    case INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64:
+        return "_popcnt_u64";
 
     default:
         // for iform without a corresponding intrisic, use the iform string
@@ -5100,23 +5112,28 @@ vector<NameAndType> X86CommonArchitecture::GetIntrinsicInputs(uint32_t intrinsic
     case INTRINSIC_XED_IFORM_TZCNT_GPR64_GPRMEM64:
         return vector<NameAndType> { NameAndType(Type::IntegerType(8, false)) };
     case INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32:
-        return vector<NameAndType> { NameAndType(Type::IntegerType(8, false)) };
-    case INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64:
         return vector<NameAndType> { NameAndType(Type::IntegerType(4, false)) };
+    case INTRINSIC_XED_IFORM_TZCNT_GPR16_GPRMEM16:
+        return vector<NameAndType> { NameAndType(Type::IntegerType(2, false)) };
+
+    case INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64:
+        return vector<NameAndType> { NameAndType(Type::IntegerType(8, false)) };
     case INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32:
         return vector<NameAndType> { NameAndType(Type::IntegerType(4, false)) };
+    case INTRINSIC_XED_IFORM_LZCNT_GPR16_GPRMEM16:
+        return vector<NameAndType> { NameAndType(Type::IntegerType(2, false)) };
+
+    case INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64:
+        return vector<NameAndType> { NameAndType(Type::IntegerType(8, false)) };
+    case INTRINSIC_XED_IFORM_POPCNT_GPR32_GPRMEM32:
+        return vector<NameAndType> { NameAndType(Type::IntegerType(4, false)) };
+    case INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16:
+        return vector<NameAndType> { NameAndType(Type::IntegerType(2, false)) };
+
+    #include "x86_intrinsic_input_type.include"
 
     default:
-    {
-		std::unique_lock<std::mutex> intrinsicLock(X86CommonArchitecture::m_intrinsicInputAndOutputLock);
-        auto search = X86CommonArchitecture::intrinsicInputAndOutput.find((X86_INTRINSIC)intrinsic);
-        if (search == X86CommonArchitecture::intrinsicInputAndOutput.end())
-        {
-            LogWarn("Cannot get input/output type information of intrinsic: %d", intrinsic);
-            return vector<NameAndType>();
-        }
-        return search->second.input;
-    }
+        return vector<NameAndType>();
     }
 }
 
@@ -5150,25 +5167,27 @@ vector<Confidence<Ref<Type>>> X86CommonArchitecture::GetIntrinsicOutputs(uint32_
     case INTRINSIC_XED_IFORM_TZCNT_GPR64_GPRMEM64:
         return vector<Confidence<Ref<Type>>> { Type::IntegerType(8, false)};
     case INTRINSIC_XED_IFORM_TZCNT_GPR32_GPRMEM32:
-        return vector<Confidence<Ref<Type>>> { Type::IntegerType(8, false)};
-    case INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64:
         return vector<Confidence<Ref<Type>>> { Type::IntegerType(4, false)};
+    case INTRINSIC_XED_IFORM_TZCNT_GPR16_GPRMEM16:
+        return vector<Confidence<Ref<Type>>> { Type::IntegerType(2, false)};
+
+    case INTRINSIC_XED_IFORM_LZCNT_GPR64_GPRMEM64:
+        return vector<Confidence<Ref<Type>>> { Type::IntegerType(8, false)};
     case INTRINSIC_XED_IFORM_LZCNT_GPR32_GPRMEM32:
         return vector<Confidence<Ref<Type>>> { Type::IntegerType(4, false)};
+    case INTRINSIC_XED_IFORM_LZCNT_GPR16_GPRMEM16:
+        return vector<Confidence<Ref<Type>>> { Type::IntegerType(2, false)};
+
+    case INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64:
+        return vector<Confidence<Ref<Type>>> { Type::IntegerType(8, false)};
+    case INTRINSIC_XED_IFORM_POPCNT_GPR32_GPRMEM32:
+        return vector<Confidence<Ref<Type>>> { Type::IntegerType(4, false)};
+    case INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16:
+        return vector<Confidence<Ref<Type>>> { Type::IntegerType(2, false)};
+
+    #include "x86_intrinsic_output_type.include"
 
     default:
-    {
-		std::unique_lock<std::mutex> intrinsicLock(X86CommonArchitecture::m_intrinsicInputAndOutputLock);
-        auto search = X86CommonArchitecture::intrinsicInputAndOutput.find((X86_INTRINSIC)intrinsic);
-        if (search == X86CommonArchitecture::intrinsicInputAndOutput.end())
-        {
-            LogWarn("Cannot get input/output type information of intrinsic: %d", intrinsic);
-            return vector<Confidence<Ref<Type>>>();
-        }
-        return search->second.output;
-    }
+        return vector<Confidence<Ref<Type>>>();
     }
 }
-
-std::mutex X86CommonArchitecture::m_intrinsicInputAndOutputLock;
-std::map<X86_INTRINSIC, IntrinsicInputAndOuput> X86CommonArchitecture::intrinsicInputAndOutput;

@@ -97,7 +97,4 @@ public:
 	virtual bool AlwaysBranch(uint8_t* data, uint64_t, size_t len) override;
 	virtual bool InvertBranch(uint8_t* data, uint64_t, size_t len) override;
 	virtual bool SkipAndReturnValue(uint8_t* data, uint64_t, size_t len, uint64_t value) override;
-
-	static std::mutex m_intrinsicInputAndOutputLock;
-	static std::map<X86_INTRINSIC, IntrinsicInputAndOuput> intrinsicInputAndOutput;
 };
