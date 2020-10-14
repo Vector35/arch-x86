@@ -26,12 +26,15 @@ type_cacher = TypeCacher()
 
 class CodeGenerator():
     
-    def __init__(self, path, vector_element_name, enclose_element_with, rw):
+    def __init__(self, path, map_name, vector_element_name, enclose_element_with, rw):
         self.file = open(path, 'w')
-        self.write_header()
+        self.map_name = map_name
         self.vector_element_name = vector_element_name
         self.enclose_element_with = enclose_element_with
         self.rw = rw
+
+        self.write_header()
+
         # if you do not exclude these, when you run code like `Architecture['x86_64']`,
         # if will create integer of size 576
         self.excluded_intrinsics = [
@@ -50,10 +53,34 @@ class CodeGenerator():
         ]
 
     def clean_up(self):
+        self.write_footer()
         self.file.close()
 
     def write_header(self):
-        self.file.write('// Generated file, please do not edit directly\n\n')
+        self.file.write('// Generated file, please do not directly modify\n')
+        self.file.write(
+'''
+#define _CRT_SECURE_NO_WARNINGS
+#include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
+#include <sstream>
+#include "binaryninjaapi.h"
+#include "il.h"
+#include "arch_x86_common_architecture.h"
+extern "C" {
+    #include "xedInc/xed-interface.h"
+}
+
+using namespace BinaryNinja;
+using namespace std;
+
+''')
+        self.file.write('unordered_map<uint32_t, vector<%s> > X86CommonArchitecture::%s = {\n' %
+            (self.vector_element_name, self.map_name))
+
+    def write_footer(self):
+        self.file.write('};')
 
     def generate_intrinsic(self, ins):
 
@@ -62,10 +89,9 @@ class CodeGenerator():
         if ins.iform in self.excluded_intrinsics:
             return
 
-        s = 'case %s:' % ins.iform
-        s += '\n\t'
-        s += 'return vector<%s> ' % self.vector_element_name
+        s = '\t{%s, vector<%s>' % (ins.iform, self.vector_element_name)
         s += '{ '
+
         for operand in ins.operands:
             if not self.rw in operand.rw:
                 continue
@@ -81,7 +107,7 @@ class CodeGenerator():
         if s.endswith(', '):
             s = s[:-2]
 
-        s += ' };\n'
+        s += ' } },\n'
         self.file.write(s)
 
 class Intrinsic():
@@ -401,8 +427,8 @@ class Operand():
         return s
 
 def main():
-    intrinsic_input = CodeGenerator('../x86_intrinsic_input_type.include', 'NameAndType', 'NameAndType', 'r')
-    intrinsic_output = CodeGenerator('../x86_intrinsic_output_type.include', 'Confidence<Ref<Type>>', '', 'w')
+    intrinsic_input = CodeGenerator('../x86_intrinsic_input_type.cpp', 'IntrinsicInputTypes', 'NameAndType', 'NameAndType', 'r')
+    intrinsic_output = CodeGenerator('../x86_intrinsic_output_type.cpp', 'IntrinsicOutputTypess', 'Confidence<Ref<Type>>', '', 'w')
     with open('iform-type-dump.txt', 'r') as f:
         ins = Intrinsic()
         for line in f:

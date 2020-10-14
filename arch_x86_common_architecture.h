@@ -98,5 +98,6 @@ public:
 	virtual bool InvertBranch(uint8_t* data, uint64_t, size_t len) override;
 	virtual bool SkipAndReturnValue(uint8_t* data, uint64_t, size_t len, uint64_t value) override;
 
-	#include "x86_intrinsic_cached_types.include"
+	static unordered_map<uint32_t, vector<NameAndType> > IntrinsicInputTypes;
+	static unordered_map<uint32_t, vector<Confidence<Ref<Type>>> > IntrinsicOutputTypess;
 };

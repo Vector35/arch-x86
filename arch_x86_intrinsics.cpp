@@ -5130,10 +5130,15 @@ vector<NameAndType> X86CommonArchitecture::GetIntrinsicInputs(uint32_t intrinsic
     case INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16:
         return vector<NameAndType> { NameAndType(Type::IntegerType(2, false)) };
 
-    #include "x86_intrinsic_input_type.include"
+    // #include "x86_intrinsic_input_type.include"
 
     default:
+    {
+        auto search = X86CommonArchitecture::IntrinsicInputTypes.find(intrinsic);
+        if (search != X86CommonArchitecture::IntrinsicInputTypes.end())
+            return search->second;
         return vector<NameAndType>();
+    }
     }
 }
 
@@ -5185,9 +5190,14 @@ vector<Confidence<Ref<Type>>> X86CommonArchitecture::GetIntrinsicOutputs(uint32_
     case INTRINSIC_XED_IFORM_POPCNT_GPR16_GPRMEM16:
         return vector<Confidence<Ref<Type>>> { Type::IntegerType(2, false)};
 
-    #include "x86_intrinsic_output_type.include"
+    // #include "x86_intrinsic_output_type.include"
 
     default:
+    {
+        auto search = X86CommonArchitecture::IntrinsicOutputTypess.find(intrinsic);
+        if (search != X86CommonArchitecture::IntrinsicOutputTypess.end())
+            return search->second;
         return vector<Confidence<Ref<Type>>>();
+    }
     }
 }
