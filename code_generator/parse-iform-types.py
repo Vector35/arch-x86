@@ -1,5 +1,29 @@
 #!/usr/bin/env python3
 
+class TypeCacher():
+
+    def __init__(self):
+        self.cached_types = {}
+        self.num_cached_types = 0
+    
+    def get_cached_type_str(self, type_str):
+        if type_str in self.cached_types:
+            cached_type_str = 'cached_type_%d' % self.cached_types[type_str]
+        else:
+            cached_type_str = 'cached_type_%d' % self.num_cached_types
+            self.cached_types[type_str] = self.num_cached_types
+            self.num_cached_types += 1
+        return cached_type_str
+    
+    def dump_to_file(self, path):
+        with open(path, 'w') as output:
+            output.write('// Generated file, please do not edit directly\n\n')
+            for cached_type, val in self.cached_types.items():
+                s = 'Confidence<Ref<Type>> cached_type_%d = %s;\n' % (val, cached_type)
+                output.write(s)
+
+type_cacher = TypeCacher()
+
 class CodeGenerator():
     
     def __init__(self, path, vector_element_name, enclose_element_with, rw):
@@ -29,9 +53,11 @@ class CodeGenerator():
         self.file.close()
 
     def write_header(self):
-        self.file.write('// Generated file, please do not directly modify\n\n')
+        self.file.write('// Generated file, please do not edit directly\n\n')
 
     def generate_intrinsic(self, ins):
+
+        global type_cacher
 
         if ins.iform in self.excluded_intrinsics:
             return
@@ -43,11 +69,14 @@ class CodeGenerator():
         for operand in ins.operands:
             if not self.rw in operand.rw:
                 continue
+
             op_str = operand.generate_str()
+            cached_op_str = type_cacher.get_cached_type_str(op_str)
+
             if self.enclose_element_with == '':
-                s += '%s, ' % op_str
+                s += '%s, ' % cached_op_str
             else:
-                s += '%s(%s), ' % (self.enclose_element_with, op_str)
+                s += '%s(%s), ' % (self.enclose_element_with, cached_op_str)
 
         if s.endswith(', '):
             s = s[:-2]
@@ -397,6 +426,8 @@ def main():
     
     intrinsic_input.clean_up()
     intrinsic_output.clean_up()
+
+    type_cacher.dump_to_file('../x86_intrinsic_cached_types.include')
 
 if __name__ == '__main__':
     main()
