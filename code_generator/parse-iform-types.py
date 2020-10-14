@@ -1,5 +1,30 @@
 #!/usr/bin/env python3
 
+class TypeCacher():
+
+    def __init__(self):
+        self.cached_types = {}
+        self.num_cached_types = 0
+    
+    def get_cached_type_str(self, type_str):
+        if type_str in self.cached_types:
+            cached_type_str = 'cached_type_%d' % self.cached_types[type_str]
+        else:
+            cached_type_str = 'cached_type_%d' % self.num_cached_types
+            self.cached_types[type_str] = self.num_cached_types
+            self.num_cached_types += 1
+        return cached_type_str
+    
+    def dump_to_file(self, path):
+        with open(path, 'w') as output:
+            output.write('// Generated file, please do not edit directly\n\n')
+            for cached_type, val in self.cached_types.items():
+                type_id_str = cached_type.split(' ')[0]
+                s = '%s cached_type_%d = %s;\n' % (type_id_str, val, cached_type)
+                output.write(s)
+
+type_cacher = TypeCacher()
+
 class CodeGenerator():
     
     def __init__(self, path, vector_element_name, enclose_element_with, rw):
@@ -29,30 +54,38 @@ class CodeGenerator():
         self.file.close()
 
     def write_header(self):
-        self.file.write('// Generated file, please do not directly modify\n\n')
+        self.file.write('// Generated file, please do not edit directly\n\n')
 
     def generate_intrinsic(self, ins):
+
+        global type_cacher
 
         if ins.iform in self.excluded_intrinsics:
             return
 
         s = 'case %s:' % ins.iform
-        s += '\n\t'
-        s += 'return vector<%s> ' % self.vector_element_name
-        s += '{ '
+        s += '\n\treturn '
+        return_str = 'vector<%s> ' % self.vector_element_name
+        return_str += '{ '
         for operand in ins.operands:
             if not self.rw in operand.rw:
                 continue
+
             op_str = operand.generate_str()
+            # cached_op_str = type_cacher.get_cached_type_str(op_str)
+
             if self.enclose_element_with == '':
-                s += '%s, ' % op_str
+                return_str += '%s, ' % op_str
             else:
-                s += '%s(%s), ' % (self.enclose_element_with, op_str)
+                return_str += '%s(%s), ' % (self.enclose_element_with, op_str)
 
-        if s.endswith(', '):
-            s = s[:-2]
+        if return_str.endswith(', '):
+            return_str = return_str[:-2]
 
-        s += ' };\n'
+        return_str += ' }'
+        return_str = type_cacher.get_cached_type_str(return_str)
+        s += return_str
+        s += ';\n'
         self.file.write(s)
 
 class Intrinsic():
@@ -397,6 +430,8 @@ def main():
     
     intrinsic_input.clean_up()
     intrinsic_output.clean_up()
+
+    type_cacher.dump_to_file('../x86_intrinsic_cached_types.include')
 
 if __name__ == '__main__':
     main()
