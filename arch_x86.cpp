@@ -2460,6 +2460,11 @@ BNRegisterStackInfo X86CommonArchitecture::GetRegisterStackInfo(uint32_t regStac
 	return Architecture::GetRegisterStackInfo(regStack);
 }
 
+bool X86CommonArchitecture::CanAssemble()
+{
+	return true;
+}
+
 bool X86CommonArchitecture::Assemble(const string& code, uint64_t addr, DataBuffer& result, string& errors)
 {
 	string finalCode;
@@ -2489,14 +2494,6 @@ bool X86CommonArchitecture::Assemble(const string& code, uint64_t addr, DataBuff
 		return false;
 	}
 
-	virtual bool CanAssemble() override
-	{
-		return true;
-	}
-
-	virtual bool Assemble(const string& code, uint64_t addr, DataBuffer& result, string& errors) override
-	{
-		string finalCode;
 	#ifdef WIN32
 		string yasmPath = GetPathRelativeToBundledPluginDirectory("yasm.exe");
 	#else

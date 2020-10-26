@@ -86,6 +86,7 @@ public:
     virtual vector<NameAndType> GetIntrinsicInputs(uint32_t intrinsic) override;
     virtual vector<Confidence<Ref<Type>>> GetIntrinsicOutputs(uint32_t intrinsic) override;
 
+	virtual bool CanAssemble() override;
 	virtual bool Assemble(const string& code, uint64_t addr, DataBuffer& result, string& errors) override;
 	virtual bool IsNeverBranchPatchAvailable(const uint8_t* data, uint64_t, size_t len) override;
 	virtual bool IsAlwaysBranchPatchAvailable(const uint8_t* data, uint64_t, size_t len) override;
