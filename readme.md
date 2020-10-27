@@ -1,6 +1,10 @@
 # arch-x86
 This is the x86 plugin that ships with Binary Ninja.
 
+## Contributing
+
+If you're interested in contributing when you submit your first PR, you'll receive a notice from [CLA Assistant](https://cla-assistant.io/) that allows you to sign our [Contribution License Agreement](https://binary.ninja/cla.pdf) online. 
+
 ## Building
 
 Building the architecture plugin requires `cmake` 3.13 or above. You will also need the
@@ -34,3 +38,10 @@ To update XED, first run `make download` to download the latest source and make 
 Update July 2020:
 
 Commit 9bdeca6d77065e5f1b23891655a26e510ffae74a changes the order of segement registers in the generated xed-reg-enum.h. If left unattended, this will cause database descrepency. Currently, we revert the commit 9bdeca6d77065e5f1b23891655a26e510ffae74a before building xed. This does not affect the xed's own functionality since the xed tests still pass without any issue.
+
+## License
+
+This repository itself is released under an [Apache 2.0](./license) license. Note that it relies on the following additional libraries each available under their respective licenses:
+
+- [Intel XED](https://intelxed.github.io/): [Apache 2.0](https://github.com/intelxed/xed/blob/master/LICENSE)
+- [YASM](https://yasm.tortall.net/): ["new" BSD License](http://github.com/yasm/yasm/blob/master/BSD.txt) (inside of
