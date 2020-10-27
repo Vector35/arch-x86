@@ -44,4 +44,4 @@ Commit 9bdeca6d77065e5f1b23891655a26e510ffae74a changes the order of segement re
 This repository itself is released under an [Apache 2.0](./license) license. Note that it relies on the following additional libraries each available under their respective licenses:
 
 - [Intel XED](https://intelxed.github.io/): [Apache 2.0](https://github.com/intelxed/xed/blob/master/LICENSE)
-- [YASM](https://yasm.tortall.net/): ["new" BSD License](http://github.com/yasm/yasm/blob/master/BSD.txt) (inside of
+- [YASM](https://yasm.tortall.net/): ["new" BSD License](http://github.com/yasm/yasm/blob/master/BSD.txt) (inside of [./yasm/](yasm/))
