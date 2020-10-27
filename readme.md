@@ -1,5 +1,5 @@
 # arch-x86
-This is the x86 plugin that ships with Binary Ninja.
+This is the x86/x64 plugin that ships with Binary Ninja.
 
 ## Contributing
 
