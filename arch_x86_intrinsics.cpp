@@ -9,6 +9,7 @@ extern "C" {
     #include "xedInc/xed-interface.h"
 }
 #include "arch_x86_common_architecture.h"
+#include "x86_intrinsic_cached_types.include"
 
 using namespace BinaryNinja;
 using namespace std;

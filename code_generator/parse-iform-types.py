@@ -20,7 +20,7 @@ class TypeCacher():
             output.write('// Generated file, please do not edit directly\n\n')
             for cached_type, val in self.cached_types.items():
                 type_id_str = cached_type.split(' ')[0]
-                s = '%s cached_type_%d = %s;\n' % (type_id_str, val, cached_type)
+                s = 'static %s cached_type_%d = %s;\n' % (type_id_str, val, cached_type)
                 output.write(s)
 
 type_cacher = TypeCacher()
