@@ -2601,7 +2601,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(il.SetRegister(2, XED_REG_DI, il.Pop(2)));
 		il.AddInstruction(il.SetRegister(2, XED_REG_SI, il.Pop(2)));
 		il.AddInstruction(il.SetRegister(2, XED_REG_BP, il.Pop(2)));
-		il.AddInstruction(il.SetRegister(2, XED_REG_SP, il.Pop(2)));
+		il.AddInstruction(il.SetRegister(2, XED_REG_SP, il.Add(2, il.Register(2, XED_REG_SP), il.Const(2, 2))));
 		il.AddInstruction(il.SetRegister(2, XED_REG_BX, il.Pop(2)));
 		il.AddInstruction(il.SetRegister(2, XED_REG_DX, il.Pop(2)));
 		il.AddInstruction(il.SetRegister(2, XED_REG_CX, il.Pop(2)));
@@ -2612,7 +2612,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(il.SetRegister(4, XED_REG_EDI, il.Pop(4)));
 		il.AddInstruction(il.SetRegister(4, XED_REG_ESI, il.Pop(4)));
 		il.AddInstruction(il.SetRegister(4, XED_REG_EBP, il.Pop(4)));
-		il.AddInstruction(il.SetRegister(4, XED_REG_ESP, il.Pop(4)));
+		il.AddInstruction(il.SetRegister(4, XED_REG_ESP, il.Add(4, il.Register(4, XED_REG_ESP), il.Const(4, 4))));
 		il.AddInstruction(il.SetRegister(4, XED_REG_EBX, il.Pop(4)));
 		il.AddInstruction(il.SetRegister(4, XED_REG_EDX, il.Pop(4)));
 		il.AddInstruction(il.SetRegister(4, XED_REG_ECX, il.Pop(4)));
