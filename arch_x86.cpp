@@ -4416,7 +4416,7 @@ static void InitX86Settings()
 				"Sets the disassembly syntax to a simplified Intel format. (TBD) ",
 				"Sets the disassembly syntax to Intel format. (Destination on the left) ",
 				"Sets the disassembly syntax to AT&T format. (Destination on the right) "],
-			"ignore" : ["SettingsResourceScope"]
+			"ignore" : ["SettingsProjectScope", "SettingsResourceScope"]
 			})");
 
 	settings->RegisterSetting("arch.x86.disassembly.separator",
@@ -4426,7 +4426,7 @@ static void InitX86Settings()
 			"default" : ", ",
 			"aliases" : ["arch.x86.disassemblySeperator", "arch.x86.disassemblySeparator"],
 			"description" : "Specify the token separator between operands.",
-			"ignore" : ["SettingsResourceScope"]
+			"ignore" : ["SettingsProjectScope", "SettingsResourceScope"]
 			})");
 
 	settings->RegisterSetting("arch.x86.disassembly.lowercase",
@@ -4436,7 +4436,7 @@ static void InitX86Settings()
 			"default" : true,
 			"aliases" : ["arch.x86.disassemblyLowercase"],
 			"description" : "Specify the case for opcodes, operands, and registers.",
-			"ignore" : ["SettingsResourceScope"]
+			"ignore" : ["SettingsProjectScope", "SettingsResourceScope"]
 			})");
 }
 
