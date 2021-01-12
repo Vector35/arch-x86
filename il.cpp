@@ -455,8 +455,6 @@ static void CMovFlagCond(const int64_t addr, const xed_decoded_inst_t* xedd, Low
 			ReadILOperand(il, xedd, addr, 1, 1)));
 
 	il.AddInstruction(il.Goto(doneLabel));
-
-	il.AddInstruction(il.Goto(doneLabel));
 	il.MarkLabel(doneLabel);
 }
 
@@ -478,8 +476,6 @@ static void CMovFlagGroup(const int64_t addr, const xed_decoded_inst_t* xedd, Lo
 	il.AddInstruction(
 		WriteILOperand(il, xedd, addr, 0, 0,
 			ReadILOperand(il, xedd, addr, 1, 1)));
-
-	il.AddInstruction(il.Goto(doneLabel));
 
 	il.AddInstruction(il.Goto(doneLabel));
 	il.MarkLabel(doneLabel);
