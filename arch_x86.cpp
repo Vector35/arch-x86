@@ -3699,6 +3699,11 @@ public:
 	{
 		return XED_REG_ST0;
 	}
+
+	virtual bool IsEligibleForHeuristics() override
+	{
+		return false;
+	}
 };
 
 
@@ -3837,6 +3842,11 @@ public:
 	virtual uint32_t GetIntegerReturnValueRegister() override
 	{
 		return XED_REG_RAX;
+	}
+
+	virtual bool IsEligibleForHeuristics() override
+	{
+		return false;
 	}
 };
 
