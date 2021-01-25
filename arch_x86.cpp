@@ -4453,6 +4453,8 @@ static void InitX86Settings()
 
 extern "C"
 {
+	BN_DECLARE_CORE_ABI_VERSION
+
 #ifdef DEMO_VERSION
 	bool X86PluginInit()
 #else
