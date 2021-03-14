@@ -1889,9 +1889,9 @@ case INTRINSIC_XED_IFORM_WRMSR:
 case INTRINSIC_XED_IFORM_RDTSC:
 	return cached_type_25;
 case INTRINSIC_XED_IFORM_RDMSR:
-	return cached_type_147;
+	return cached_type_77;
 case INTRINSIC_XED_IFORM_RDPMC:
-	return cached_type_147;
+	return cached_type_77;
 case INTRINSIC_XED_IFORM_SYSENTER:
 	return cached_type_18;
 case INTRINSIC_XED_IFORM_SYSEXIT:
