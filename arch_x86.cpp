@@ -4236,7 +4236,7 @@ public:
 				reloc.truncateSize = 2;
 				break;
 			case R_X86_64_32S:
-				reloc.pcRelative = true;
+				reloc.pcRelative = false;
 				reloc.baseRelative = false;
 				reloc.hasSign = true;
 				reloc.size = 4;
