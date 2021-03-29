@@ -1885,7 +1885,7 @@ case INTRINSIC_XED_IFORM_MOV_DR_GPR32_DR:
 case INTRINSIC_XED_IFORM_MOV_DR_GPR64_DR:
 	return cached_type_62;
 case INTRINSIC_XED_IFORM_WRMSR:
-	return cached_type_62;
+	return cached_type_24;
 case INTRINSIC_XED_IFORM_RDTSC:
 	return cached_type_181;
 case INTRINSIC_XED_IFORM_RDMSR:

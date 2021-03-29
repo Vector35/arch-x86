@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
 
+# These are not real registers and should be excluded from the intrinsic types
+XED_INVALID_OPERAND_REGISTERS = {
+    'XED_REG_INVALID',
+    'XED_REG_MSRS',
+    'XED_REG_STACKPUSH',
+    'XED_REG_STACKPOP',
+    'XED_REG_ERROR',
+    'XED_REG_LAST',
+}
+
 class TypeCacher():
 
     def __init__(self):
@@ -112,6 +122,9 @@ class Intrinsic():
                 # more info goes here
             else:
                 operand.oc2 = self.vl
+        elif operand.oc2 in XED_INVALID_OPERAND_REGISTERS:
+            # These are not real registers
+            return
 
         operand.parse()
         self.operands.append(operand)

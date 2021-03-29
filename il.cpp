@@ -535,9 +535,9 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		for (uint32_t i = 0; i < noperands; i++)
 		{
 			const xed_operand_t* op = xed_inst_operand(xi, i);
+			xed_operand_enum_t op_name = xed_operand_name(op);
 			if (xed_operand_written(op))
 			{
-				xed_operand_enum_t op_name = xed_operand_name(op);
 				switch(op_name)
 				{
 				case XED_OPERAND_REG0:
@@ -576,6 +576,40 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			}
 			if (xed_operand_read(op))
 			{
+				switch(op_name)
+				{
+				case XED_OPERAND_REG0:
+				case XED_OPERAND_REG1:
+				case XED_OPERAND_REG2:
+				case XED_OPERAND_REG3:
+				case XED_OPERAND_REG4:
+				case XED_OPERAND_REG5:
+				case XED_OPERAND_REG6:
+				case XED_OPERAND_REG7:
+				case XED_OPERAND_REG8:
+				case XED_OPERAND_BASE0:
+				case XED_OPERAND_BASE1:
+				{
+					// XED includes some things that are not actual registers in
+					// xed_reg_enum_t. We'll just omit those special cases here.
+					xed_reg_enum_t r = xed_decoded_inst_get_reg(xedd, op_name);
+					switch(r)
+					{
+					case XED_REG_INVALID:
+					case XED_REG_MSRS:
+					case XED_REG_STACKPUSH:
+					case XED_REG_STACKPOP:
+					case XED_REG_ERROR:
+					case XED_REG_LAST:
+						continue;
+					default:
+						break;
+					}
+				}
+				default:
+					break;
+				}
+
 				parameters.push_back(ReadILOperand(il, xedd, addr, i, i));
 			}
 		}

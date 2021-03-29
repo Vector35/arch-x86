@@ -54,6 +54,7 @@ public:
 	X86CommonArchitecture(const string& name, size_t bits);
 	virtual BNEndianness GetEndianness() const override;
 	virtual vector<uint32_t> GetGlobalRegisters() override;
+	virtual vector<uint32_t> GetSystemRegisters() override;
 	virtual bool GetInstructionInfo(const uint8_t* data, uint64_t addr, size_t maxLen, InstructionInfo& result) override;
 	virtual bool GetInstructionText(const uint8_t* data, uint64_t addr, size_t& len, vector<InstructionTextToken>& result) override;
 	
