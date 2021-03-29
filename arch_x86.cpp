@@ -1945,6 +1945,11 @@ vector<uint32_t> X86CommonArchitecture::GetGlobalRegisters()
 vector<uint32_t> X86CommonArchitecture::GetSystemRegisters()
 {
 	return vector< uint32_t> {
+		XED_REG_BND0,
+		XED_REG_BND1,
+		XED_REG_BND2,
+		XED_REG_BND3,
+
 		XED_REG_CR0,
 		XED_REG_CR1,
 		XED_REG_CR2,
@@ -1961,7 +1966,24 @@ vector<uint32_t> X86CommonArchitecture::GetSystemRegisters()
 		XED_REG_CR13,
 		XED_REG_CR14,
 		XED_REG_CR15,
+
+		XED_REG_DR0,
+		XED_REG_DR1,
+		XED_REG_DR2,
+		XED_REG_DR3,
+		XED_REG_DR4,
+		XED_REG_DR5,
+		XED_REG_DR6,
+		XED_REG_DR7,
+
+		XED_REG_GDTR,
+		XED_REG_LDTR,
+		XED_REG_IDTR,
+		XED_REG_TR,
+
 		XED_REG_TSC,
+		XED_REG_TSCAUX,
+		XED_REG_MSRS
 	};
 }
 
