@@ -2849,6 +2849,8 @@ public:
 			// 64-Bit
 			XED_REG_XCR0,  // 32+ (64 on 32, 64 on 64)
 
+			XED_REG_MSRS,
+
 			// 80-Bit
 			XED_REG_ST0, XED_REG_ST1, XED_REG_ST2, XED_REG_ST3, XED_REG_ST4, XED_REG_ST5, XED_REG_ST6, XED_REG_ST7,  // 32+ Floating point
 			REG_X87_r(0), REG_X87_r(1), REG_X87_r(2), REG_X87_r(3), REG_X87_r(4), REG_X87_r(5), REG_X87_r(6), REG_X87_r(7),
@@ -2900,12 +2902,18 @@ public:
 			XED_REG_MMX0, XED_REG_MMX1, XED_REG_MMX2, XED_REG_MMX3, XED_REG_MMX4, XED_REG_MMX5, XED_REG_MMX6, XED_REG_MMX7,  // 32+ Floating point, bottom of st regs
 			XED_REG_XCR0,  // 32+ (64 on 32, 64 on 64)
 
+			XED_REG_RFLAGS,
+
+			XED_REG_MSRS,
+
 			// 80-Bit
 			XED_REG_ST0, XED_REG_ST1, XED_REG_ST2, XED_REG_ST3, XED_REG_ST4, XED_REG_ST5, XED_REG_ST6, XED_REG_ST7,  // 32+ Floating point
 			REG_X87_r(0), REG_X87_r(1), REG_X87_r(2), REG_X87_r(3), REG_X87_r(4), REG_X87_r(5), REG_X87_r(6), REG_X87_r(7),
 
 			// 128-Bit
 			XED_REG_XMM0, XED_REG_XMM1, XED_REG_XMM2, XED_REG_XMM3, XED_REG_XMM4, XED_REG_XMM5, XED_REG_XMM6, XED_REG_XMM7,  // 32+ SSE
+
+			XED_REG_BND0, XED_REG_BND1, XED_REG_BND2, XED_REG_BND3,
 		};
 	}
 
@@ -3025,6 +3033,10 @@ public:
 
 		case XED_REG_XCR0:   return RegisterInfo(XED_REG_XCR0, 0, 8);
 
+		case XED_REG_RFLAGS: return RegisterInfo(XED_REG_RFLAGS, 0, 8);
+
+		case XED_REG_MSRS:	 return RegisterInfo(XED_REG_MSRS, 0, 8);
+
 		// 80-Bit
 		case XED_REG_ST0:    return RegisterInfo(XED_REG_ST0, 0, 10);
 		case XED_REG_ST1:    return RegisterInfo(XED_REG_ST1, 0, 10);
@@ -3053,6 +3065,11 @@ public:
 		case XED_REG_XMM5:   return RegisterInfo(XED_REG_XMM5, 0, 16);
 		case XED_REG_XMM6:   return RegisterInfo(XED_REG_XMM6, 0, 16);
 		case XED_REG_XMM7:   return RegisterInfo(XED_REG_XMM7, 0, 16);
+
+		case XED_REG_BND0:   return RegisterInfo(XED_REG_BND0, 0, 16);
+		case XED_REG_BND1:   return RegisterInfo(XED_REG_BND1, 0, 16);
+		case XED_REG_BND2:   return RegisterInfo(XED_REG_BND2, 0, 16);
+		case XED_REG_BND3:   return RegisterInfo(XED_REG_BND3, 0, 16);
 
 		default:
 			return RegisterInfo(XED_REG_INVALID, 0, 0);
@@ -3201,6 +3218,8 @@ public:
 			XED_REG_BNDCFGU, XED_REG_BNDSTATUS,  // 64 briefly. MPX control registers
 			XED_REG_K0, XED_REG_K1, XED_REG_K2, XED_REG_K3, XED_REG_K4, XED_REG_K5, XED_REG_K6, XED_REG_K7,  // 64+ AVX bit-masking registers (also not confident in size)
 
+			XED_REG_MSRS,
+
 			XED_REG_CR0, XED_REG_CR1, XED_REG_CR2, XED_REG_CR3, XED_REG_CR4, XED_REG_CR5, XED_REG_CR6, XED_REG_CR7, XED_REG_CR8, XED_REG_CR9, XED_REG_CR10, XED_REG_CR11, XED_REG_CR12, XED_REG_CR13, XED_REG_CR14, XED_REG_CR15,  // 32+ (32 on 32, 64 on 64) Control Registers
 			XED_REG_DR0, XED_REG_DR1, XED_REG_DR2, XED_REG_DR3, XED_REG_DR4, XED_REG_DR5, XED_REG_DR6, XED_REG_DR7,  // 32+ (starting in later revisions of 32) (32 on 32, 64 on 64) Debug registers
 
@@ -3266,6 +3285,8 @@ public:
 
 			XED_REG_BNDCFGU, XED_REG_BNDSTATUS,  // 64 briefly. MPX control registers
 			XED_REG_K0, XED_REG_K1, XED_REG_K2, XED_REG_K3, XED_REG_K4, XED_REG_K5, XED_REG_K6, XED_REG_K7,  // 64+ AVX bit-masking registers (also not confident in size)
+
+			XED_REG_MSRS,
 
 			XED_REG_CR0, XED_REG_CR1, XED_REG_CR2, XED_REG_CR3, XED_REG_CR4, XED_REG_CR5, XED_REG_CR6, XED_REG_CR7, XED_REG_CR8, XED_REG_CR9, XED_REG_CR10, XED_REG_CR11, XED_REG_CR12, XED_REG_CR13, XED_REG_CR14, XED_REG_CR15,  // 32+ (32 on 32, 64 on 64) Control Registers
 			XED_REG_DR0, XED_REG_DR1, XED_REG_DR2, XED_REG_DR3, XED_REG_DR4, XED_REG_DR5, XED_REG_DR6, XED_REG_DR7,  // 32+ (starting in later revisions of 32) (32 on 32, 64 on 64) Debug registers
@@ -3467,6 +3488,8 @@ public:
 		case XED_REG_DR5:       return RegisterInfo(XED_REG_DR5, 0, 8);
 		case XED_REG_DR6:       return RegisterInfo(XED_REG_DR6, 0, 8);
 		case XED_REG_DR7:       return RegisterInfo(XED_REG_DR7, 0, 8);
+
+		case XED_REG_MSRS:	    return RegisterInfo(XED_REG_MSRS, 0, 8);
 
 		// 80-Bit
 		case XED_REG_ST0:       return RegisterInfo(XED_REG_ST0, 0, 10);
