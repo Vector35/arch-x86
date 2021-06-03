@@ -4545,6 +4545,7 @@ extern "C"
 
 		// XED Setup
 		xed_tables_init();
+		X86CommonArchitecture::InitializeCachedTypes();
 
 		// Register the architectures in the global list of available architectures
 		Architecture* x16 = new X16Architecture();

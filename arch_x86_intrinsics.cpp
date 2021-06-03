@@ -9,7 +9,6 @@ extern "C" {
     #include "xedInc/xed-interface.h"
 }
 #include "arch_x86_common_architecture.h"
-#include "x86_intrinsic_cached_types.include"
 
 using namespace BinaryNinja;
 using namespace std;
@@ -5191,4 +5190,22 @@ vector<Confidence<Ref<Type>>> X86CommonArchitecture::GetIntrinsicOutputs(uint32_
     default:
         return vector<Confidence<Ref<Type>>>();
     }
+}
+
+void X86CommonArchitecture::InitializeCachedInputTypes()
+{
+#include "x86_intrinsic_cached_input_types.include"
+}
+
+
+void X86CommonArchitecture::InitializeCachedOutputTypes()
+{
+#include "x86_intrinsic_cached_output_types.include"
+}
+
+
+void X86CommonArchitecture::InitializeCachedTypes()
+{
+    X86CommonArchitecture::InitializeCachedInputTypes();
+    X86CommonArchitecture::InitializeCachedOutputTypes();
 }

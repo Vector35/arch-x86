@@ -12,36 +12,38 @@ XED_INVALID_OPERAND_REGISTERS = {
 
 class TypeCacher():
 
-    def __init__(self):
+    def __init__(self, name):
         self.cached_types = []
+        self.name = name
     
     def get_cached_type_str(self, type_str):
         try:
-            cached_type_str = 'cached_type_%d' % self.cached_types.index(type_str)
+            cached_type_str = 'X86CommonArchitecture::cached_%s_types[%d]' % (self.name, self.cached_types.index(type_str))
         except:
             self.cached_types.append(type_str)
-            cached_type_str = 'cached_type_%d' % (len(self.cached_types) - 1)
+            cached_type_str = 'X86CommonArchitecture::cached_%s_types[%d]' % (self.name, len(self.cached_types) - 1)
 
         return cached_type_str
     
-    def dump_to_file(self, path):
-        with open(path, 'w') as output:
+    def dump_to_file(self, decl_path):
+        with open(decl_path, 'w') as output:
             output.write('// Generated file, please do not edit directly\n\n')
+            type_id_str = self.cached_types[0].split(' ')[0]
+            n = len(self.cached_types)
+            output.write(f'X86CommonArchitecture::cached_{self.name}_types = new {type_id_str}[{n}];\n')
             for idx, cached_type in enumerate(self.cached_types):
-                type_id_str = cached_type.split(' ')[0]
-                s = 'static %s cached_type_%d = %s;\n' % (type_id_str, idx, cached_type)
-                output.write(s)
-
-type_cacher = TypeCacher()
+                output.write(f'X86CommonArchitecture::cached_{self.name}_types[{idx}] = {cached_type};\n')
 
 class CodeGenerator():
     
-    def __init__(self, path, vector_element_name, enclose_element_with, rw):
+    def __init__(self, path, vector_element_name, enclose_element_with, name, rw):
         self.file = open(path, 'w')
         self.write_header()
         self.vector_element_name = vector_element_name
         self.enclose_element_with = enclose_element_with
         self.rw = rw
+        self.name = name
+        self.type_cacher = TypeCacher(name)
         # if you do not exclude these, when you run code like `Architecture['x86_64']`,
         # if will create integer of size 576
         self.excluded_intrinsics = [
@@ -67,8 +69,6 @@ class CodeGenerator():
 
     def generate_intrinsic(self, ins):
 
-        global type_cacher
-
         if ins.iform in self.excluded_intrinsics:
             return
 
@@ -81,7 +81,6 @@ class CodeGenerator():
                 continue
 
             op_str = operand.generate_str()
-            # cached_op_str = type_cacher.get_cached_type_str(op_str)
 
             if self.enclose_element_with == '':
                 return_str += '%s, ' % op_str
@@ -92,10 +91,13 @@ class CodeGenerator():
             return_str = return_str[:-2]
 
         return_str += ' }'
-        return_str = type_cacher.get_cached_type_str(return_str)
+        return_str = self.type_cacher.get_cached_type_str(return_str)
         s += return_str
         s += ';\n'
         self.file.write(s)
+    
+    def dump_cached_types(self):
+        self.type_cacher.dump_to_file(f'../x86_intrinsic_cached_{self.name}_types.include')
 
 class Intrinsic():
     def __init__(self):
@@ -417,8 +419,8 @@ class Operand():
         return s
 
 def main():
-    intrinsic_input = CodeGenerator('../x86_intrinsic_input_type.include', 'NameAndType', 'NameAndType', 'r')
-    intrinsic_output = CodeGenerator('../x86_intrinsic_output_type.include', 'Confidence<Ref<Type>>', '', 'w')
+    intrinsic_input = CodeGenerator('../x86_intrinsic_input_type.include', 'NameAndType', 'NameAndType', 'input', 'r')
+    intrinsic_output = CodeGenerator('../x86_intrinsic_output_type.include', 'Confidence<Ref<Type>>', '', 'output', 'w')
     with open('iform-type-dump.txt', 'r') as f:
         ins = Intrinsic()
         for line in f:
@@ -439,11 +441,12 @@ def main():
             else:
                 print('unexpected line! I do not know what to do with it')
                 print(line)
-    
+
+    intrinsic_input.dump_cached_types()
+    intrinsic_output.dump_cached_types()
+
     intrinsic_input.clean_up()
     intrinsic_output.clean_up()
-
-    type_cacher.dump_to_file('../x86_intrinsic_cached_types.include')
 
 if __name__ == '__main__':
     main()
