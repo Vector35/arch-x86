@@ -13,24 +13,23 @@ XED_INVALID_OPERAND_REGISTERS = {
 class TypeCacher():
 
     def __init__(self):
-        self.cached_types = {}
-        self.num_cached_types = 0
+        self.cached_types = []
     
     def get_cached_type_str(self, type_str):
-        if type_str in self.cached_types:
-            cached_type_str = 'cached_type_%d' % self.cached_types[type_str]
-        else:
-            cached_type_str = 'cached_type_%d' % self.num_cached_types
-            self.cached_types[type_str] = self.num_cached_types
-            self.num_cached_types += 1
+        try:
+            cached_type_str = 'cached_type_%d' % self.cached_types.index(type_str)
+        except:
+            self.cached_types.append(type_str)
+            cached_type_str = 'cached_type_%d' % (len(self.cached_types) - 1)
+
         return cached_type_str
     
     def dump_to_file(self, path):
         with open(path, 'w') as output:
             output.write('// Generated file, please do not edit directly\n\n')
-            for cached_type, val in self.cached_types.items():
+            for idx, cached_type in enumerate(self.cached_types):
                 type_id_str = cached_type.split(' ')[0]
-                s = 'static %s cached_type_%d = %s;\n' % (type_id_str, val, cached_type)
+                s = 'static %s cached_type_%d = %s;\n' % (type_id_str, idx, cached_type)
                 output.write(s)
 
 type_cacher = TypeCacher()
