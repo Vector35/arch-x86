@@ -4407,6 +4407,129 @@ public:
 	}
 };
 
+class CoffRelocationHandler: public RelocationHandler
+{
+public:
+	virtual bool ApplyRelocation(Ref<BinaryView> view, Ref<Architecture> arch, Ref<Relocation> reloc, uint8_t* dest, size_t len) override
+	{
+		// Note: info.base contains preferred base address and the base where the image is actually loaded
+		(void)view;
+		(void)arch;
+		(void)len;
+		uint64_t* data64 = (uint64_t*)dest;
+		uint32_t* data32 = (uint32_t*)dest;
+		uint16_t* data16 = (uint16_t*)dest;
+		auto info = reloc->GetInfo();
+		if (info.size == 8)
+		{
+			data64[0] = info.target - info.address - info.size;
+		}
+		else if (info.size == 4)
+		{
+			data32[0] = (uint32_t)info.target - info.address - info.size;
+		}
+		return true;
+	}
+
+	virtual bool GetRelocationInfo(Ref<BinaryView> view, Ref<Architecture> arch, vector<BNRelocationInfo>& result) override
+	{
+		(void)view; (void)arch;
+		set<uint64_t> relocTypes;
+		for (auto& reloc : result)
+		{
+			if (arch->GetName() == "x86_64")
+			{
+				switch (reloc.nativeType)
+				{
+				case PE_IMAGE_REL_AMD64_ABSOLUTE:
+					reloc.type = IgnoredRelocation;
+					break;
+				case PE_IMAGE_REL_AMD64_ADDR64:
+					reloc.size = 8;
+					break;
+				case PE_IMAGE_REL_AMD64_ADDR32NB:
+					reloc.base = 0; // TODO: validate this
+					// fall-through ok
+				case PE_IMAGE_REL_AMD64_ADDR32:
+				// case PE_IMAGE_REL_AMD64_REL32_1:
+				// case PE_IMAGE_REL_AMD64_REL32_2:
+				// case PE_IMAGE_REL_AMD64_REL32_3:
+				// case PE_IMAGE_REL_AMD64_REL32_4:
+				// case PE_IMAGE_REL_AMD64_REL32_5:
+					reloc.size = 4;
+					break;
+				// case PE_IMAGE_REL_AMD64_SECTION:
+				// 	reloc.size = 2;
+				// 	break;
+				// case PE_IMAGE_REL_AMD64_SECREL:
+				// 	reloc.size = 4;
+				// 	break;
+				// case PE_IMAGE_REL_AMD64_SECREL7:
+				// 	// 7-bit offset from the base of the section that contains the target
+				// 	reloc.size = 1;
+				// 	break;
+				default:
+					// By default, PE relocations are correct when not rebased.
+					// Upon rebasing, support would need to be added to correctly process the relocation
+					reloc.type = UnhandledRelocation;
+					relocTypes.insert(reloc.nativeType);
+				}
+			}
+			if (arch->GetName() == "x86")
+			{
+				switch (reloc.nativeType)
+				{
+				case PE_IMAGE_REL_I386_ABSOLUTE:
+					reloc.type = IgnoredRelocation;
+					break;
+				case PE_IMAGE_REL_I386_DIR32NB:
+					reloc.base = 0; // TODO: validate this
+					// fall-through ok
+				case PE_IMAGE_REL_I386_DIR32:
+				// case PE_IMAGE_REL_AMD64_REL32_1:
+				// case PE_IMAGE_REL_AMD64_REL32_2:
+				// case PE_IMAGE_REL_AMD64_REL32_3:
+				// case PE_IMAGE_REL_AMD64_REL32_4:
+				// case PE_IMAGE_REL_AMD64_REL32_5:
+				case PE_IMAGE_REL_I386_REL32:
+					reloc.size = 4;
+					break;
+				// case PE_IMAGE_REL_I386_SECTION:
+				// 	reloc.size = 2;
+				// 	break;
+				// case PE_IMAGE_REL_I386_SECREL:
+				// 	reloc.size = 4;
+				// 	break;
+				// case PE_IMAGE_REL_I386_SECREL7:
+				// 	// 7-bit offset from the base of the section that contains the target
+				// 	reloc.size = 1;
+				// 	break;
+				default:
+					// By default, PE relocations are correct when not rebased.
+					// Upon rebasing, support would need to be added to correctly process the relocation
+					reloc.type = UnhandledRelocation;
+					relocTypes.insert(reloc.nativeType);
+				}
+			}
+		}
+
+		for (auto& reloc : relocTypes)
+			LogWarn("Unsupported PE relocation: %s", GetRelocationString((PeRelocationType)reloc));
+		return false;
+	}
+
+	virtual size_t GetOperandForExternalRelocation(const uint8_t* data, uint64_t addr, size_t length,
+		Ref<LowLevelILFunction> il, Ref<Relocation> relocation) override
+	{
+		(void)data;
+		(void)addr;
+		(void)length;
+		(void)il;
+		(void)relocation;
+		return BN_AUTOCOERCE_EXTERN_PTR;
+	}
+};
+
 class PeRelocationHandler: public RelocationHandler
 {
 public:
@@ -4577,7 +4700,7 @@ extern "C"
 
 		x86->RegisterRelocationHandler("Mach-O", new x86MachoRelocationHandler());
 		x86->RegisterRelocationHandler("ELF", new x86ElfRelocationHandler());
-		x86->RegisterRelocationHandler("COFF", new PeRelocationHandler());
+		x86->RegisterRelocationHandler("COFF", new CoffRelocationHandler());
 		x86->RegisterRelocationHandler("PE", new PeRelocationHandler());
 
 		conv = new X64SystemVCallingConvention(x64);
@@ -4593,6 +4716,7 @@ extern "C"
 
 		x64->RegisterRelocationHandler("Mach-O", new x64MachoRelocationHandler());
 		x64->RegisterRelocationHandler("ELF", new x64ElfRelocationHandler());
+		x64->RegisterRelocationHandler("COFF", new CoffRelocationHandler());
 		x64->RegisterRelocationHandler("PE", new PeRelocationHandler());
 
 		// Register the architectures with the binary format parsers so that they know when to use
