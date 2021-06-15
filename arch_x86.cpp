@@ -4418,15 +4418,36 @@ public:
 		(void)len;
 		uint64_t* data64 = (uint64_t*)dest;
 		uint32_t* data32 = (uint32_t*)dest;
-		uint16_t* data16 = (uint16_t*)dest;
+		// uint16_t* data16 = (uint16_t*)dest;
 		auto info = reloc->GetInfo();
+		uint64_t offset = 0;
+
+		if (info.nativeType == PE_IMAGE_REL_AMD64_REL32)
+		{
+			offset = info.target - info.address;
+		}
+		else if (info.target > info.address)
+			offset = info.target - info.address;
+
+
+		// else if (info.address > info.target)
+		// 	offset = info.address - info.target;
+		// int32_t fudge = info.size;
+
+		if (info.external && offset > 0)
+			//fudge = 4;
+			offset -= 4;
+		else if (offset > 0) // && info.nativeType != PE_IMAGE_REL_AMD64_REL32)
+			offset -= 4;
+		// if (info.address >= info.target || info.target - info.address == 0)
+		// 	fudge = 0;
 		if (info.size == 8)
 		{
-			data64[0] = info.target - info.address - info.size;
+			data64[0] = offset; //info.target - info.address - fudge;
 		}
 		else if (info.size == 4)
 		{
-			data32[0] = (uint32_t)info.target - info.address - info.size;
+			data32[0] = (uint32_t)offset; //info.target - info.address - fudge;
 		}
 		return true;
 	}
@@ -4451,6 +4472,7 @@ public:
 					reloc.base = 0; // TODO: validate this
 					// fall-through ok
 				case PE_IMAGE_REL_AMD64_ADDR32:
+				case PE_IMAGE_REL_AMD64_REL32:
 				// case PE_IMAGE_REL_AMD64_REL32_1:
 				// case PE_IMAGE_REL_AMD64_REL32_2:
 				// case PE_IMAGE_REL_AMD64_REL32_3:
@@ -4475,7 +4497,7 @@ public:
 					relocTypes.insert(reloc.nativeType);
 				}
 			}
-			if (arch->GetName() == "x86")
+			else if (arch->GetName() == "x86")
 			{
 				switch (reloc.nativeType)
 				{
