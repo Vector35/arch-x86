@@ -4424,7 +4424,7 @@ public:
 
 		if (info.nativeType == PE_IMAGE_REL_AMD64_REL32)
 		{
-			offset = info.target - info.address;
+			offset = info.target - info.address - info.base;
 		}
 		else if (info.target > info.address)
 			offset = info.target - info.address;
@@ -4437,7 +4437,7 @@ public:
 		if (info.external && offset > 0)
 			//fudge = 4;
 			offset -= 4;
-		else if (offset > 0) // && info.nativeType != PE_IMAGE_REL_AMD64_REL32)
+		else if (offset > 0 && info.nativeType != PE_IMAGE_REL_AMD64_ADDR32NB)
 			offset -= 4;
 		// if (info.address >= info.target || info.target - info.address == 0)
 		// 	fudge = 0;
