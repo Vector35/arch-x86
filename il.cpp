@@ -1461,6 +1461,11 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_DIV:
+		il.AddInstruction(
+			il.SetRegister(opOneLen,
+				LLIL_TEMP(2),
+				ReadILOperand(il, xedd, addr, 0, 0)));
+
 		switch (opOneLen)
 		{
 		case 1:
@@ -1469,13 +1474,13 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					LLIL_TEMP(0),
 					il.DivDoublePrecUnsigned(1,
 						il.Register(2, XED_REG_AX),
-						ReadILOperand(il, xedd, addr, 0, 0))));
+						il.Register(opOneLen, LLIL_TEMP(2)))));
 
 			il.AddInstruction(il.SetRegister(1,
 				LLIL_TEMP(1),
 				il.ModDoublePrecUnsigned(1,
 					il.Register(2, XED_REG_AX),
-					ReadILOperand(il, xedd, addr, 0, 0))));
+					il.Register(opOneLen, LLIL_TEMP(2)))));
 
 			il.AddInstruction(
 				il.SetRegister(1,
@@ -1496,7 +1501,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.RegisterSplit(2,
 							XED_REG_DX,
 							XED_REG_AX),
-						ReadILOperand(il, xedd, addr, 0, 0))));
+						il.Register(opOneLen, LLIL_TEMP(2)))));
 
 			il.AddInstruction(
 				il.SetRegister(2,
@@ -1505,7 +1510,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.RegisterSplit(2,
 							XED_REG_DX,
 							XED_REG_AX),
-						ReadILOperand(il, xedd, addr, 0, 0))));
+						il.Register(opOneLen, LLIL_TEMP(2)))));
 
 			il.AddInstruction(
 				il.SetRegister(2,
@@ -1526,7 +1531,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.RegisterSplit(4,
 							XED_REG_EDX,
 							XED_REG_EAX),
-						ReadILOperand(il, xedd, addr, 0, 0))));
+						il.Register(opOneLen, LLIL_TEMP(2)))));
 
 			il.AddInstruction(
 				il.SetRegister(4,
@@ -1535,7 +1540,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.RegisterSplit(4,
 							XED_REG_EDX,
 							XED_REG_EAX),
-						ReadILOperand(il, xedd, addr, 0, 0))));
+						il.Register(opOneLen, LLIL_TEMP(2)))));
 
 			il.AddInstruction(
 				il.SetRegister(4,
@@ -1555,7 +1560,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					il.RegisterSplit(8,
 						XED_REG_RDX,
 						XED_REG_RAX),
-					ReadILOperand(il, xedd, addr, 0, 0))));
+					il.Register(opOneLen, LLIL_TEMP(2)))));
 
 			il.AddInstruction(
 				il.SetRegister(8,
@@ -1564,7 +1569,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.RegisterSplit(8,
 							XED_REG_RDX,
 							XED_REG_RAX),
-						ReadILOperand(il, xedd, addr, 0, 0))));
+						il.Register(opOneLen, LLIL_TEMP(2)))));
 
 			il.AddInstruction(
 				il.SetRegister(8,
