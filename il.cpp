@@ -2729,6 +2729,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_CMPXCHG16B:
 	case XED_ICLASS_CMPXCHG16B_LOCK:
 	{
+		// clang-format off
 		// assembly: cmpxchg8b qword [rdi]
 		// $ ./xed-ex1 0fc70f
 		// Attempting to decode: 0f c7 0f
@@ -2736,17 +2737,18 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		// instruction-length 3
 		// operand-width 32
 		// Operands
-		// #   TYPE               DETAILS        VIS  RW       OC2 BITS BYTES NELEM ELEMSZ   ELEMTYPE
-		// REGCLASS #   ====               =======        ===  ==       === ==== ===== ===== ======
-		// ========   ======== 0   MEM0           (see below)   EXPLICIT RCW         Q   64     8     1
-		// 64        INT    INVALID 1   REG0              REG0=EDX SUPPRESSED RCW         D   32     4
-		// 1     32        INT        GPR 2   REG1              REG1=EAX SUPPRESSED RCW         D   32
-		// 4     1     32        INT        GPR 3   REG2              REG2=ECX SUPPRESSED   R         D
-		// 32     4     1     32        INT        GPR 4   REG3              REG3=EBX SUPPRESSED   R D
-		// 32     4     1     32        INT        GPR 5   REG4           REG4=EFLAGS SUPPRESSED   W Y
-		// 32     4     1     32        INT      FLAGS Memory Operands
+		// #   TYPE               DETAILS        VIS  RW       OC2 BITS BYTES NELEM ELEMSZ   ELEMTYPE   REGCLASS
+		// #   ====               =======        ===  ==       === ==== ===== ===== ======   ========   ========
+		// 0   MEM0           (see below)   EXPLICIT RCW         Q   64     8     1     64        INT    INVALID
+		// 1   REG0              REG0=EDX SUPPRESSED RCW         D   32     4     1     32        INT        GPR
+		// 2   REG1              REG1=EAX SUPPRESSED RCW         D   32     4     1     32        INT        GPR
+		// 3   REG2              REG2=ECX SUPPRESSED   R         D   32     4     1     32        INT        GPR
+		// 4   REG3              REG3=EBX SUPPRESSED   R         D   32     4     1     32        INT        GPR
+		// 5   REG4           REG4=EFLAGS SUPPRESSED   W         Y   32     4     1     32        INT      FLAGS
+		// Memory Operands
 		//   0    read written SEG= DS BASE= EDI/GPR  ASZ0=32
 		//   MemopBytes = 8
+		// clang-format on
 
 		LowLevelILLabel trueLabel, falseLabel, doneLabel;
 		size_t cmpGranularity = xed_decoded_inst_operand_element_size_bits(xedd, 1) / 8 * 2;
