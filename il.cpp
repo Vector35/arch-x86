@@ -117,16 +117,17 @@ static size_t GetILOperandMemoryAddress(LowLevelILFunction& il, const xed_decode
 			}
 
 		//  The [...+const] bit or just [const]
+		bool isJmpClass = (XED_ICLASS_JMP == xed_decoded_inst_get_iclass(xedd));
 		if (xed_operand_values_has_memory_displacement(xed_decoded_inst_operands_const(xedd)) && (disp != 0))
 		{
 			if (offset != BN_INVALID_EXPR)
-				offset = il.Add(addrSize, offset, il.Const(addrSize, disp));
+				offset = il.Add(addrSize, offset, isJmpClass ? il.ConstPointer(addrSize, disp) : il.Const(addrSize, disp));
 			else
-				offset = il.Const(addrSize, disp);
+				offset = isJmpClass ? il.ConstPointer(addrSize, disp) : il.Const(addrSize, disp);
 		}
 		else if (xed_operand_values_has_memory_displacement(xed_decoded_inst_operands_const(xedd)) && (disp == 0) && (offset == BN_INVALID_EXPR))
 		{
-			offset = il.Const(addrSize, disp);
+			offset = isJmpClass ? il.ConstPointer(addrSize, disp) : il.Const(addrSize, disp);
 		}
 
 		// If there's a non-default segment in use
