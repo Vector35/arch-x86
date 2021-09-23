@@ -4430,24 +4430,17 @@ public:
 			offset = info.target - info.address;
 
 
-		// else if (info.address > info.target)
-		// 	offset = info.address - info.target;
-		// int32_t fudge = info.size;
-
 		if (info.external && offset > 0)
-			//fudge = 4;
 			offset -= 4;
 		else if (offset > 0 && info.nativeType != PE_IMAGE_REL_AMD64_ADDR32NB)
 			offset -= 4;
-		// if (info.address >= info.target || info.target - info.address == 0)
-		// 	fudge = 0;
 		if (info.size == 8)
 		{
-			data64[0] = offset; //info.target - info.address - fudge;
+			data64[0] = offset;
 		}
 		else if (info.size == 4)
 		{
-			data32[0] = (uint32_t)offset; //info.target - info.address - fudge;
+			data32[0] = (uint32_t)offset;
 		}
 		return true;
 	}
