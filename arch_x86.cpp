@@ -216,6 +216,61 @@ static const char* GetRelocationString(PeRelocationType relocType)
 }
 
 
+static const char* GetRelocationString(COFFx86RelocationType relocType)
+{
+	static const char* relocTable[] =
+	{
+		"PE_IMAGE_REL_I386_ABSOLUTE",
+		"PE_IMAGE_REL_I386_DIR16",
+		"PE_IMAGE_REL_I386_REL16",
+		"", "", "",
+		"PE_IMAGE_REL_I386_DIR32",
+		"PE_IMAGE_REL_I386_DIR32NB",
+		"",
+		"PE_IMAGE_REL_I386_SEG12",
+		"PE_IMAGE_REL_I386_SECTION",
+		"PE_IMAGE_REL_I386_SECREL",
+		"PE_IMAGE_REL_I386_TOKEN",
+		"PE_IMAGE_REL_I386_SECREL7",
+		"", "", "", "", "", "",
+		"PE_IMAGE_REL_I386_REL32",
+	};
+
+	if (relocType < MAX_PE_X86_RELOCATION)
+		return relocTable[relocType];
+	return "Unknown x86 relocation";
+}
+
+
+static const char* GetRelocationString(COFFx64RelocationType relocType)
+{
+	static const char* relocTable[] =
+	{
+		"PE_IMAGE_REL_AMD64_ABSOLUTE",
+		"PE_IMAGE_REL_AMD64_ADDR64",
+		"PE_IMAGE_REL_AMD64_ADDR32",
+		"PE_IMAGE_REL_AMD64_ADDR32NB",
+		"PE_IMAGE_REL_AMD64_REL32",
+		"PE_IMAGE_REL_AMD64_REL32_1",
+		"PE_IMAGE_REL_AMD64_REL32_2",
+		"PE_IMAGE_REL_AMD64_REL32_3",
+		"PE_IMAGE_REL_AMD64_REL32_4",
+		"PE_IMAGE_REL_AMD64_REL32_5",
+		"PE_IMAGE_REL_AMD64_SECTION",
+		"PE_IMAGE_REL_AMD64_SECREL",
+		"PE_IMAGE_REL_AMD64_SECREL7",
+		"PE_IMAGE_REL_AMD64_TOKEN",
+		"PE_IMAGE_REL_AMD64_SREL32",
+		"PE_IMAGE_REL_AMD64_PAIR",
+		"PE_IMAGE_REL_AMD64_SSPAN32",
+	};
+
+	if (relocType < MAX_PE_X64_RELOCATION)
+		return relocTable[relocType];
+	return "Unknown x86_64 relocation";
+}
+
+
 static const char* GetRelocationString(Elfx86RelocationType relocType)
 {
 	static const char* relocTable[] =
@@ -354,53 +409,6 @@ static const char* GetRelocationString(Machox64RelocationType relocType)
 	return "Unknown x64 relocation";
 }
 
-// static const char* GetRelocationString(COFFx86RelocationType relocType)
-// {
-// 	static const char* relocTable[] =
-// 	{
-// 		"PE_IMAGE_REL_I386_ABSOLUTE",
-// 		"PE_IMAGE_REL_I386_DIR16",
-// 		"PE_IMAGE_REL_I386_REL16",
-// 		"PE_IMAGE_REL_I386_DIR32",
-// 		"PE_IMAGE_REL_I386_DIR32NB",
-// 		"PE_IMAGE_REL_I386_SEG12",
-// 		"PE_IMAGE_REL_I386_SECTION",
-// 		"PE_IMAGE_REL_I386_SECREL",
-// 		"PE_IMAGE_REL_I386_TOKEN",
-// 		"PE_IMAGE_REL_I386_SECREL7",
-// 		"PE_IMAGE_REL_I386_REL32"
-// 	};
-// 	if (relocType < MAX_PE_X86_RELOCATION)
-// 		return relocTable[relocType];
-// 	return "Unknown x86 relocation";
-// }
-
-// static const char* GetRelocationString(COFFx64RelocationType relocType)
-// {
-// 	static const char* relocTable[] =
-// 	{
-// 		"PE_IMAGE_REL_AMD64_ABSOLUTE",
-// 		"PE_IMAGE_REL_AMD64_ADDR64",
-// 		"PE_IMAGE_REL_AMD64_ADDR32",
-// 		"PE_IMAGE_REL_AMD64_ADDR32NB",
-// 		"PE_IMAGE_REL_AMD64_REL32",
-// 		"PE_IMAGE_REL_AMD64_REL32_1",
-// 		"PE_IMAGE_REL_AMD64_REL32_2",
-// 		"PE_IMAGE_REL_AMD64_REL32_3",
-// 		"PE_IMAGE_REL_AMD64_REL32_4",
-// 		"PE_IMAGE_REL_AMD64_REL32_5",
-// 		"PE_IMAGE_REL_AMD64_SECTION",
-// 		"PE_IMAGE_REL_AMD64_SECREL",
-// 		"PE_IMAGE_REL_AMD64_SECREL7",
-// 		"PE_IMAGE_REL_AMD64_TOKEN",
-// 		"PE_IMAGE_REL_AMD64_SREL32",
-// 		"PE_IMAGE_REL_AMD64_PAIR",
-// 		"PE_IMAGE_REL_AMD64_SSPAN32"
-// 	};
-// 	if (relocType < MAX_PE_X64_RELOCATION)
-// 		return relocTable[relocType];
-// 	return "Unknown x86_64 relocation";
-// }
 
 bool X86CommonArchitecture::Decode(const uint8_t* data, size_t len, xed_decoded_inst_t* xedd)
 {
@@ -4422,26 +4430,43 @@ public:
 		auto info = reloc->GetInfo();
 		uint64_t offset = 0;
 
-		if (info.nativeType == PE_IMAGE_REL_AMD64_REL32)
+		// if (info.nativeType == PE_IMAGE_REL_AMD64_REL32)
+		// {
+		// 	offset = info.target - info.address - info.base;
+		// }
+		// else if (info.target > info.address)
+		// 	offset = info.target - info.address;
+
+
+		// if (info.external && offset > 0)
+		// 	offset -= 4;
+		// else if (offset > 0 && info.nativeType != PE_IMAGE_REL_AMD64_ADDR32NB)
+		// 	offset -= 4;
+
+
+		if (info.pcRelative)
 		{
-			offset = info.target - info.address - info.base;
+			int64_t relative_offset = info.target - info.address;
+			// if (info.address > info.target)
+			// 	offset = info.address - info.target;
+			// else
+			// 	offset = info.target - info.address;
+			offset = (uint64_t) relative_offset;
 		}
-		else if (info.target > info.address)
-			offset = info.target - info.address;
+		else
+			offset = info.target;
 
+		if (! info.implicitAddend && info.addend)
+			offset += info.addend;
 
-		if (info.external && offset > 0)
-			offset -= 4;
-		else if (offset > 0 && info.nativeType != PE_IMAGE_REL_AMD64_ADDR32NB)
-			offset -= 4;
+		if (info.baseRelative)
+			offset -= info.base;
+
 		if (info.size == 8)
-		{
-			data64[0] = offset;
-		}
+			data64[0] += offset;
 		else if (info.size == 4)
-		{
-			data32[0] = (uint32_t)offset;
-		}
+			data32[0] += (uint32_t)offset;
+
 		return true;
 	}
 
@@ -4465,30 +4490,40 @@ public:
 					reloc.base = 0; // TODO: validate this
 					// fall-through ok
 				case PE_IMAGE_REL_AMD64_ADDR32:
-				case PE_IMAGE_REL_AMD64_REL32:
-				// case PE_IMAGE_REL_AMD64_REL32_1:
-				// case PE_IMAGE_REL_AMD64_REL32_2:
-				// case PE_IMAGE_REL_AMD64_REL32_3:
-				// case PE_IMAGE_REL_AMD64_REL32_4:
-				// case PE_IMAGE_REL_AMD64_REL32_5:
 					reloc.size = 4;
 					break;
-				// case PE_IMAGE_REL_AMD64_SECTION:
+				case PE_IMAGE_REL_AMD64_REL32:
+					reloc.pcRelative = true;
+					reloc.size = 4;
+					reloc.addend = -4;
+					break;
+				case PE_IMAGE_REL_AMD64_REL32_1:
+				case PE_IMAGE_REL_AMD64_REL32_2:
+				case PE_IMAGE_REL_AMD64_REL32_3:
+				case PE_IMAGE_REL_AMD64_REL32_4:
+				case PE_IMAGE_REL_AMD64_REL32_5:
+				case PE_IMAGE_REL_AMD64_SECTION:
 				// 	reloc.size = 2;
 				// 	break;
-				// case PE_IMAGE_REL_AMD64_SECREL:
+				case PE_IMAGE_REL_AMD64_SECREL:
 				// 	reloc.size = 4;
 				// 	break;
-				// case PE_IMAGE_REL_AMD64_SECREL7:
+				case PE_IMAGE_REL_AMD64_SECREL7:
 				// 	// 7-bit offset from the base of the section that contains the target
 				// 	reloc.size = 1;
 				// 	break;
+				case PE_IMAGE_REL_AMD64_TOKEN:
+				case PE_IMAGE_REL_AMD64_SREL32:
+				case PE_IMAGE_REL_AMD64_PAIR:
+				case PE_IMAGE_REL_AMD64_SSPAN32:
 				default:
 					// By default, PE relocations are correct when not rebased.
 					// Upon rebasing, support would need to be added to correctly process the relocation
 					reloc.type = UnhandledRelocation;
 					relocTypes.insert(reloc.nativeType);
 				}
+				for (auto& reloc : relocTypes)
+					LogWarn("Unsupported COFF relocation: %s", GetRelocationString((COFFx64RelocationType)reloc));
 			}
 			else if (arch->GetName() == "x86")
 			{
@@ -4497,39 +4532,36 @@ public:
 				case PE_IMAGE_REL_I386_ABSOLUTE:
 					reloc.type = IgnoredRelocation;
 					break;
+				case PE_IMAGE_REL_I386_REL32:
+					reloc.pcRelative = true;
+					reloc.size = 4;
+					reloc.addend = -4;
+					break;
 				case PE_IMAGE_REL_I386_DIR32NB:
 					reloc.base = 0; // TODO: validate this
 					// fall-through ok
 				case PE_IMAGE_REL_I386_DIR32:
-				// case PE_IMAGE_REL_AMD64_REL32_1:
-				// case PE_IMAGE_REL_AMD64_REL32_2:
-				// case PE_IMAGE_REL_AMD64_REL32_3:
-				// case PE_IMAGE_REL_AMD64_REL32_4:
-				// case PE_IMAGE_REL_AMD64_REL32_5:
-				case PE_IMAGE_REL_I386_REL32:
+					reloc.baseRelative = false;
 					reloc.size = 4;
 					break;
-				// case PE_IMAGE_REL_I386_SECTION:
-				// 	reloc.size = 2;
-				// 	break;
-				// case PE_IMAGE_REL_I386_SECREL:
-				// 	reloc.size = 4;
-				// 	break;
-				// case PE_IMAGE_REL_I386_SECREL7:
-				// 	// 7-bit offset from the base of the section that contains the target
-				// 	reloc.size = 1;
-				// 	break;
+				case PE_IMAGE_REL_I386_SEG12:
+				case PE_IMAGE_REL_I386_SECTION:
+				case PE_IMAGE_REL_I386_SECREL:
+				case PE_IMAGE_REL_I386_TOKEN:
+				case PE_IMAGE_REL_I386_SECREL7:
+				case PE_IMAGE_REL_I386_DIR16:
+				case PE_IMAGE_REL_I386_REL16:
 				default:
 					// By default, PE relocations are correct when not rebased.
 					// Upon rebasing, support would need to be added to correctly process the relocation
 					reloc.type = UnhandledRelocation;
 					relocTypes.insert(reloc.nativeType);
 				}
+				for (auto& reloc : relocTypes)
+					LogWarn("Unsupported COFF relocation: %s", GetRelocationString((COFFx86RelocationType)reloc));
 			}
 		}
 
-		for (auto& reloc : relocTypes)
-			LogWarn("Unsupported PE relocation: %s", GetRelocationString((PeRelocationType)reloc));
 		return false;
 	}
 
