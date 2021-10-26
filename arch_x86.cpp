@@ -4430,27 +4430,9 @@ public:
 		auto info = reloc->GetInfo();
 		uint64_t offset = 0;
 
-		// if (info.nativeType == PE_IMAGE_REL_AMD64_REL32)
-		// {
-		// 	offset = info.target - info.address - info.base;
-		// }
-		// else if (info.target > info.address)
-		// 	offset = info.target - info.address;
-
-
-		// if (info.external && offset > 0)
-		// 	offset -= 4;
-		// else if (offset > 0 && info.nativeType != PE_IMAGE_REL_AMD64_ADDR32NB)
-		// 	offset -= 4;
-
-
 		if (info.pcRelative)
 		{
 			int64_t relative_offset = info.target - info.address;
-			// if (info.address > info.target)
-			// 	offset = info.address - info.target;
-			// else
-			// 	offset = info.target - info.address;
 			offset = (uint64_t) relative_offset;
 		}
 		else
@@ -4459,14 +4441,19 @@ public:
 		if (! info.implicitAddend && info.addend)
 			offset += info.addend;
 
-		if (info.baseRelative)
+		if (! info.baseRelative)
 			offset -= info.base;
 
 		if (info.size == 8)
+		{
+			// LogDebug("%s: address: %#" PRIx64 " target: %#" PRIx64 " base: %#" PRIx64 " offset: %#" PRIx64 " current: %#" PRIx64 " result: %#" PRIx64 "", __func__, info.address, info.target, info.base, offset, data64[0], data64[0] + offset);
 			data64[0] += offset;
+		}
 		else if (info.size == 4)
+		{
+			// LogDebug("%s: address: %#" PRIx64 " target: %#" PRIx64 " base: %#" PRIx64 " offset: %#" PRIx64 " current: %#" PRIx32 " result: %#" PRIx32 "", __func__, info.address, info.target, info.base, offset, data32[0], data32[0] + (uint32_t)offset);
 			data32[0] += (uint32_t)offset;
-
+		}
 		return true;
 	}
 
@@ -4484,15 +4471,19 @@ public:
 					reloc.type = IgnoredRelocation;
 					break;
 				case PE_IMAGE_REL_AMD64_ADDR64:
+					reloc.baseRelative = true;
 					reloc.size = 8;
 					break;
 				case PE_IMAGE_REL_AMD64_ADDR32NB:
-					reloc.base = 0; // TODO: validate this
-					// fall-through ok
+					reloc.baseRelative = false;
+					reloc.size = 4;
+					break;
 				case PE_IMAGE_REL_AMD64_ADDR32:
+					reloc.baseRelative = true;
 					reloc.size = 4;
 					break;
 				case PE_IMAGE_REL_AMD64_REL32:
+					reloc.baseRelative = false;
 					reloc.pcRelative = true;
 					reloc.size = 4;
 					reloc.addend = -4;
@@ -4503,15 +4494,9 @@ public:
 				case PE_IMAGE_REL_AMD64_REL32_4:
 				case PE_IMAGE_REL_AMD64_REL32_5:
 				case PE_IMAGE_REL_AMD64_SECTION:
-				// 	reloc.size = 2;
-				// 	break;
 				case PE_IMAGE_REL_AMD64_SECREL:
-				// 	reloc.size = 4;
-				// 	break;
 				case PE_IMAGE_REL_AMD64_SECREL7:
-				// 	// 7-bit offset from the base of the section that contains the target
-				// 	reloc.size = 1;
-				// 	break;
+					// 7-bit offset from the base of the section that contains the target
 				case PE_IMAGE_REL_AMD64_TOKEN:
 				case PE_IMAGE_REL_AMD64_SREL32:
 				case PE_IMAGE_REL_AMD64_PAIR:
@@ -4533,15 +4518,17 @@ public:
 					reloc.type = IgnoredRelocation;
 					break;
 				case PE_IMAGE_REL_I386_REL32:
+					reloc.baseRelative = false;
 					reloc.pcRelative = true;
 					reloc.size = 4;
 					reloc.addend = -4;
 					break;
 				case PE_IMAGE_REL_I386_DIR32NB:
-					reloc.base = 0; // TODO: validate this
-					// fall-through ok
-				case PE_IMAGE_REL_I386_DIR32:
 					reloc.baseRelative = false;
+					reloc.size = 4;
+					break;
+				case PE_IMAGE_REL_I386_DIR32:
+					reloc.baseRelative = true;
 					reloc.size = 4;
 					break;
 				case PE_IMAGE_REL_I386_SEG12:
@@ -4562,7 +4549,7 @@ public:
 			}
 		}
 
-		return false;
+		return true;
 	}
 
 	virtual size_t GetOperandForExternalRelocation(const uint8_t* data, uint64_t addr, size_t length,
