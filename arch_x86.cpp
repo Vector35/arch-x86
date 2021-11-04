@@ -4539,8 +4539,6 @@ public:
 				case PE_IMAGE_REL_I386_DIR16:
 				case PE_IMAGE_REL_I386_REL16:
 				default:
-					// By default, PE relocations are correct when not rebased.
-					// Upon rebasing, support would need to be added to correctly process the relocation
 					reloc.type = UnhandledRelocation;
 					relocTypes.insert(reloc.nativeType);
 				}
@@ -4550,17 +4548,6 @@ public:
 		}
 
 		return true;
-	}
-
-	virtual size_t GetOperandForExternalRelocation(const uint8_t* data, uint64_t addr, size_t length,
-		Ref<LowLevelILFunction> il, Ref<Relocation> relocation) override
-	{
-		(void)data;
-		(void)addr;
-		(void)length;
-		(void)il;
-		(void)relocation;
-		return BN_AUTOCOERCE_EXTERN_PTR;
 	}
 };
 
