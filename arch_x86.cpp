@@ -4488,13 +4488,15 @@ public:
 					reloc.size = 4;
 					reloc.addend = -4;
 					break;
+				case PE_IMAGE_REL_AMD64_SECTION:
+				case PE_IMAGE_REL_AMD64_SECREL:
+					// TODO: implement these, but for now, just don't warn about them
+					break;
 				case PE_IMAGE_REL_AMD64_REL32_1:
 				case PE_IMAGE_REL_AMD64_REL32_2:
 				case PE_IMAGE_REL_AMD64_REL32_3:
 				case PE_IMAGE_REL_AMD64_REL32_4:
 				case PE_IMAGE_REL_AMD64_REL32_5:
-				case PE_IMAGE_REL_AMD64_SECTION:
-				case PE_IMAGE_REL_AMD64_SECREL:
 				case PE_IMAGE_REL_AMD64_SECREL7:
 					// 7-bit offset from the base of the section that contains the target
 				case PE_IMAGE_REL_AMD64_TOKEN:
