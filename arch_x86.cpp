@@ -4462,18 +4462,6 @@ public:
 			}
 			break;
 		}
-		case PE_IMAGE_REL_AMD64_REL32_5:
-		case PE_IMAGE_REL_AMD64_REL32_4:
-		case PE_IMAGE_REL_AMD64_REL32_3:
-		case PE_IMAGE_REL_AMD64_REL32_2:
-		case PE_IMAGE_REL_AMD64_REL32_1:
-			// LogDebug("%s: %#" PRIx64 "(%#" PRIx64 ")->%#" PRIx64 " %s addend: %ld", __func__, info.address, info.target, info.address - info.target, GetRelocationString((COFFx64RelocationType)info.nativeType), (long) info.addend);
-			// Any value found in the target operand offset apparently should not be added into the final relocated offset.
-			// This has only been validated for REL32_1 and REL32_4.
-			// Note that LLVM will not generate any of these relocations: it will emit REL32 relocations.
-			data32[0] = 0;
-		case PE_IMAGE_REL_AMD64_REL32:
-			// TODO: treat reloc.addend as offset of target from its section (see llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldCOFFX86_64.h:67)
 		default:
 			if (info.size == 8)
 			{
