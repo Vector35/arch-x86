@@ -4426,7 +4426,7 @@ public:
 		(void)len;
 		uint64_t* data64 = (uint64_t*)dest;
 		uint32_t* data32 = (uint32_t*)dest;
-		// uint16_t* data16 = (uint16_t*)dest;
+		uint16_t* data16 = (uint16_t*)dest;
 		auto info = reloc->GetInfo();
 		uint64_t offset = 0;
 
@@ -4444,15 +4444,47 @@ public:
 		if (! info.baseRelative)
 			offset -= info.base;
 
-		if (info.size == 8)
+		switch (info.nativeType)
 		{
-			// LogDebug("%s: address: %#" PRIx64 " target: %#" PRIx64 " base: %#" PRIx64 " offset: %#" PRIx64 " current: %#" PRIx64 " result: %#" PRIx64 "", __func__, info.address, info.target, info.base, offset, data64[0], data64[0] + offset);
-			data64[0] += offset;
+		// case PE_IMAGE_REL_I386_SECTION:
+		case PE_IMAGE_REL_AMD64_SECTION:
+			// TODO: test this implementation, but for now, just don't warn about it
+			data16[0] = info.sectionIndex + 1;
+			break;
+		// case PE_IMAGE_REL_I386_SECREL:
+		case PE_IMAGE_REL_AMD64_SECREL:
+		{
+			// TODO: test this implementation, but for now, just don't warn about it
+			auto sections = view->GetSectionsAt(info.target);
+			if (sections.size() > 0)
+			{
+				data32[0] = info.target - sections[0]->GetStart();
+			}
+			break;
 		}
-		else if (info.size == 4)
-		{
-			// LogDebug("%s: address: %#" PRIx64 " target: %#" PRIx64 " base: %#" PRIx64 " offset: %#" PRIx64 " current: %#" PRIx32 " result: %#" PRIx32 "", __func__, info.address, info.target, info.base, offset, data32[0], data32[0] + (uint32_t)offset);
-			data32[0] += (uint32_t)offset;
+		case PE_IMAGE_REL_AMD64_REL32_5:
+		case PE_IMAGE_REL_AMD64_REL32_4:
+		case PE_IMAGE_REL_AMD64_REL32_3:
+		case PE_IMAGE_REL_AMD64_REL32_2:
+		case PE_IMAGE_REL_AMD64_REL32_1:
+			// LogDebug("%s: %#" PRIx64 "(%#" PRIx64 ")->%#" PRIx64 " %s addend: %ld", __func__, info.address, info.target, info.address - info.target, GetRelocationString((COFFx64RelocationType)info.nativeType), (long) info.addend);
+			// Any value found in the target operand offset apparently should not be added into the final relocated offset.
+			// This has only been validated for REL32_1 and REL32_4.
+			// Note that LLVM will not generate any of these relocations: it will emit REL32 relocations.
+			data32[0] = 0;
+		case PE_IMAGE_REL_AMD64_REL32:
+			// TODO: treat reloc.addend as offset of target from its section (see llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldCOFFX86_64.h:67)
+		default:
+			if (info.size == 8)
+			{
+				// LogDebug("%s: address: %#" PRIx64 " target: %#" PRIx64 " base: %#" PRIx64 " offset: %#" PRIx64 " current: %#" PRIx64 " result: %#" PRIx64 "", __func__, info.address, info.target, info.base, offset, data64[0], data64[0] + offset);
+				data64[0] += offset;
+			}
+			else if (info.size == 4)
+			{
+				// LogDebug("%s: address: %#" PRIx64 " target: %#" PRIx64 " base: %#" PRIx64 " offset: %#" PRIx32 " %+" PRId32 " current: %#" PRIx32 " result: %#" PRIx32 "", __func__, info.address, info.target, info.base, (uint32_t)offset, (uint32_t)offset, data32[0], data32[0] + (uint32_t)offset);
+				data32[0] += (uint32_t)offset;
+			}
 		}
 		return true;
 	}
@@ -4482,21 +4514,31 @@ public:
 					reloc.baseRelative = true;
 					reloc.size = 4;
 					break;
+				case PE_IMAGE_REL_AMD64_REL32_5:
+				case PE_IMAGE_REL_AMD64_REL32_4:
+				case PE_IMAGE_REL_AMD64_REL32_3:
+				case PE_IMAGE_REL_AMD64_REL32_2:
+				case PE_IMAGE_REL_AMD64_REL32_1:
+					// LogDebug("%s: %#" PRIx64 "(%#" PRIx64 ")->%#" PRIx64 " %s addend: %ld", __func__, reloc.address, reloc.target, reloc.address - reloc.target, GetRelocationString((COFFx64RelocationType)reloc.nativeType), (long) reloc.addend);
 				case PE_IMAGE_REL_AMD64_REL32:
+					// TODO: treat reloc.addend as offset of target from its section (see llvm/lib/ExecutionEngine/RuntimeDyld/Targets/RuntimeDyldCOFFX86_64.h:67)
+					reloc.addend = -(4 + (reloc.nativeType - PE_IMAGE_REL_AMD64_REL32));
 					reloc.baseRelative = false;
 					reloc.pcRelative = true;
 					reloc.size = 4;
-					reloc.addend = -4;
 					break;
 				case PE_IMAGE_REL_AMD64_SECTION:
+					// The 16-bit section index of the section that contains the target. This is used to support debugging information.
+					reloc.baseRelative = false;
+					reloc.size = 2;
+					reloc.addend = 0;
 				case PE_IMAGE_REL_AMD64_SECREL:
 					// TODO: implement these, but for now, just don't warn about them
+					// The 32-bit offset of the target from the beginning of its section. This is used to support debugging information and static thread local storage.				reloc.baseRelative = false;
+					reloc.baseRelative = false;
+					reloc.size = 4;
+					reloc.addend = 0;
 					break;
-				case PE_IMAGE_REL_AMD64_REL32_1:
-				case PE_IMAGE_REL_AMD64_REL32_2:
-				case PE_IMAGE_REL_AMD64_REL32_3:
-				case PE_IMAGE_REL_AMD64_REL32_4:
-				case PE_IMAGE_REL_AMD64_REL32_5:
 				case PE_IMAGE_REL_AMD64_SECREL7:
 					// 7-bit offset from the base of the section that contains the target
 				case PE_IMAGE_REL_AMD64_TOKEN:
@@ -4533,9 +4575,18 @@ public:
 					reloc.baseRelative = true;
 					reloc.size = 4;
 					break;
-				case PE_IMAGE_REL_I386_SEG12:
 				case PE_IMAGE_REL_I386_SECTION:
+					// The 16-bit section index of the section that contains the target. This is used to support debugging information.
+					reloc.baseRelative = false;
+					reloc.size = 2;
+					reloc.addend = 0;
 				case PE_IMAGE_REL_I386_SECREL:
+					// The 32-bit offset of the target from the beginning of its section. This is used to support debugging information and static thread local storage.				reloc.baseRelative = false;
+					reloc.baseRelative = false;
+					reloc.size = 4;
+					reloc.addend = 0;
+					break;
+				case PE_IMAGE_REL_I386_SEG12:
 				case PE_IMAGE_REL_I386_TOKEN:
 				case PE_IMAGE_REL_I386_SECREL7:
 				case PE_IMAGE_REL_I386_DIR16:
