@@ -668,13 +668,39 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_AND_LOCK: // TODO: Add Lock construct
 	case XED_ICLASS_AND:
+		il.AddInstruction(
+			WriteILOperand(il, xedd, addr, 0, 0,
+				il.And(opOneLen,
+					ReadILOperand(il, xedd, addr, 0, 0),
+					ReadILOperand(il, xedd, addr, 1, 1),
+					IL_FLAGWRITE_ALL)));
+		// Setting parity flag.
+		// Basically, if the result of AND sets the LSB, the
+		// parity flag will be unset.
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_P,
+				il.Not(
+					1,
+					il.TestBit(
+						opOneLen,
+						il.And(
+							opOneLen,
+							ReadILOperand(il, xedd, addr, 0, 0),
+							ReadILOperand(il, xedd, addr, 1, 1)
+						),
+						il.Const(opOneLen, 0)
+					)
+				)
+			)
+		);
+		break;
 	case XED_ICLASS_PAND:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.And(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+				0))); // PAND doesn't modify any flag.
 		break;
 
 	case XED_ICLASS_VPAND:
