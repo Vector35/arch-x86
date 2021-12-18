@@ -709,7 +709,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				il.And(opOneLen,
 					ReadILOperand(il, xedd, addr, 1, 1),
 					ReadILOperand(il, xedd, addr, 2, 2),
-				IL_FLAGWRITE_ALL)));
+				0))); // VPAND doesn't modify any flag
 		break;
 
 	case XED_ICLASS_ANDN:
@@ -2631,13 +2631,20 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_OR_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_OR:
+		il.AddInstruction(
+			WriteILOperand(il, xedd, addr, 0, 0,
+				il.Or(opOneLen,
+					ReadILOperand(il, xedd, addr, 0, 0),
+					ReadILOperand(il, xedd, addr, 1, 1),
+				IL_FLAGWRITE_ALL)));
+		break;
 	case XED_ICLASS_POR:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 			il.Or(opOneLen,
 				ReadILOperand(il, xedd, addr, 0, 0),
 				ReadILOperand(il, xedd, addr, 1, 1),
-			IL_FLAGWRITE_ALL)));
+			0))); // POR doesn't modify any flag
 		break;
 	case XED_ICLASS_VPOR:
 		if (xed_classify_avx512(xedd))
@@ -2650,7 +2657,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			il.Or(opOneLen,
 				ReadILOperand(il, xedd, addr, 1, 1),
 				ReadILOperand(il, xedd, addr, 2, 2),
-			IL_FLAGWRITE_ALL)));
+			0))); // VPOR doesn't modify flags
 		break;
 
 	case XED_ICLASS_POP:
