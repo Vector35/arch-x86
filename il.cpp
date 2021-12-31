@@ -3806,27 +3806,57 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_UCOMISS:
 	case XED_ICLASS_UCOMISD:
+		// Fallthrough, from intel documentation CompareOrdered and ComparedUnordered
+		// set the flags the same way.
+	case XED_ICLASS_COMISS:
+	case XED_ICLASS_COMISD:
 	{
-		il.AddInstruction(
+		ExprId set_parity_flag_expr = il.SetFlag(IL_FLAG_P,
 			il.FloatCompareUnordered(
 				opOneLen,
 				ReadFloatILOperand(il, xedd, addr, 0, 0),
 				ReadFloatILOperand(il, xedd, addr, 1, 1)
 			)
 		);
-		break;
-	}
-
-	case XED_ICLASS_COMISS:
-	case XED_ICLASS_COMISD:
-	{
-		il.AddInstruction(
-			il.FloatCompareOrdered(
+		ExprId set_carry_flag_insn = il.SetFlag(IL_FLAG_C,
+			il.Or(
 				opOneLen,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				il.FloatCompareLessThan(
+					opOneLen,
+					ReadFloatILOperand(il, xedd, addr, 0, 0),
+					ReadFloatILOperand(il, xedd, addr, 1, 1)
+				),
+				il.FloatCompareUnordered(
+					opOneLen,
+					ReadFloatILOperand(il, xedd, addr, 0, 0),
+					ReadFloatILOperand(il, xedd, addr, 1, 1)
+				),
+				0 // Don't modify any flags
 			)
 		);
+		ExprId set_zero_flag_insn = il.SetFlag(IL_FLAG_Z,
+			il.Or(
+				opOneLen,
+				il.FloatCompareEqual(
+					opOneLen,
+					ReadFloatILOperand(il, xedd, addr, 0, 0),
+					ReadFloatILOperand(il, xedd, addr, 1, 1)
+				),
+				il.FloatCompareUnordered(
+					opOneLen,
+					ReadFloatILOperand(il, xedd, addr, 0, 0),
+					ReadFloatILOperand(il, xedd, addr, 1, 1)
+				),
+				0 // Don't modify any flags
+			)
+		);
+		il.AddInstruction(set_parity_flag_expr);
+		il.AddInstruction(set_carry_flag_insn);
+		il.AddInstruction(set_zero_flag_insn);
+		// These flags always get unset
+		il.AddInstruction(il.SetFlag(IL_FLAG_S, il.Const(1, 0)));
+		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Const(1, 0)));
+		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Const(1, 0)));
 		break;
 	}
 
