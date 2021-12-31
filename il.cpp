@@ -2899,12 +2899,18 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 	case XED_ICLASS_SBB_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_SBB:
+		// SBB can be translated as DEST := (DEST - (SRC + CF));
+		// Sets the flags accordingly to the operations.
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
-				il.SubBorrow(opOneLen,
+				il.Sub(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
-					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
+					il.Add(opTwoLen,
+						ReadILOperand(il, xedd, addr, 1, 1),
+						il.Flag(IL_FLAG_C),
+						IL_FLAGWRITE_ALL),
+				IL_FLAGWRITE_ALL)));
+
 		break;
 
 	case XED_ICLASS_REPE_SCASB:
