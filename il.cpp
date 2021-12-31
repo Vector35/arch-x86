@@ -3382,11 +3382,17 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 		break;
 	}
-
-	case XED_ICLASS_XOR_LOCK: // TODO: Handle lock prefix
 	case XED_ICLASS_XORPS:
-	case XED_ICLASS_XOR:
 	case XED_ICLASS_PXOR:
+		il.AddInstruction(
+			WriteILOperand(il, xedd, addr, 0, 0,
+				il.Xor(opOneLen,
+					ReadILOperand(il, xedd, addr, 0, 0),
+					ReadILOperand(il, xedd, addr, 1, 1),
+					0)));
+		break;
+	case XED_ICLASS_XOR_LOCK: // TODO: Handle lock prefix
+	case XED_ICLASS_XOR:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.Xor(opOneLen,
@@ -3405,7 +3411,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				il.Xor(opOneLen,
 					ReadILOperand(il, xedd, addr, 1, 1),
 					ReadILOperand(il, xedd, addr, 2, 2),
-				IL_FLAGWRITE_ALL)));
+				0)));
 		break;
 
 	case XED_ICLASS_XADD:
