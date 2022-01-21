@@ -2854,7 +2854,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			il.SetFlag(IL_FLAG_O,
 				il.Xor(1,
-					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, opOneLen * 8)), // Get the MSB
+					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
 					il.Flag(IL_FLAG_C)
 				)
 			)
@@ -2949,7 +2949,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				il.Xor(1,
 					// This operation happens BEFORE the rotation is performed
 					// Using the saved result instead
-					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, opOneLen * 8)), // Get the MSB
+					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
 					il.Flag(IL_FLAG_C)
 				)
 			)
@@ -3032,7 +3032,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			il.SetFlag(IL_FLAG_O,
 				il.Xor(1,
-					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, opOneLen * 8)), // Get the MSB
+					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
 					il.Flag(IL_FLAG_C)
 				)
 			)
@@ -3097,8 +3097,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			il.SetFlag(IL_FLAG_O, 
 				il.Xor(1,
-					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, opOneLen * 8)), // Get the MSB
-					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8 - 1))) // Get second to last bit
+					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
+					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 2)) // Get second to last bit
 				)
 			)
 		);
@@ -3402,7 +3402,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 								il.Const(opOneLen, count_mask)
 							)
 						),
-						il.Const(opOneLen, opOneLen * 8)
+						il.Const(opOneLen, opOneLen * 8) // Get the MSB
 					)
 				)
 			)
@@ -3427,7 +3427,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			il.SetFlag(IL_FLAG_O,
 				il.Xor(1,
-					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, opOneLen * 8)),
+					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
 					il.Flag(IL_FLAG_C)
 				)
 			)
@@ -3512,7 +3512,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		// significant bit of the original operand. (pre-shift)
 		il.AddInstruction(
 			il.SetFlag(IL_FLAG_O,
-				il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, opOneLen * 8))
+				il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1))
 			)
 		);
 		il.AddInstruction(il.Goto(doneLabel));
