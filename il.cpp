@@ -3364,7 +3364,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		// If the masked count is 0, the flags are not affected.
 		il.AddInstruction(
 			il.If(
-				il.CompareEqual(1,
+				il.CompareNotEqual(1,
 					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
 					il.Const(1, 0)),
 				trueLabel,
