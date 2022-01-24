@@ -2776,22 +2776,192 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	}
 
 	case XED_ICLASS_RCL:
+	{
+		LowLevelILLabel ofTrueLabel, ofFalseLabel;
+		// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+		bool has_rex_prefix = (xedd->_operands.rexw == 1);
+		// TODO: Check if the operand size and not REX.W is sufficient?
+		size_t count_mask = 0b11111;
+		if (has_rex_prefix)
+		{
+			count_mask = 0b111111;
+		}
+		// Check if the count is 0 first:
+		// If the masked count is 0, the flags are not affected.
+		il.AddInstruction(
+			il.If(
+				il.CompareNotEqual(1,
+					// RCL includes CF in the rotation.
+					// Rotating 9 bits on an 8bit register (e.g: cl) is a no-op and flags are not affected
+					// To emulate that we compare equal if (count & mask) % (operand_length + 1) is 0
+					// This is useful because we emulate the CF flag using masks based on the rotation size
+					il.ModUnsigned(1,
+						il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+						il.Const(1, (opOneLen * 8) + 1)),
+					il.Const(1, 0)),
+				trueLabel,
+				doneLabel // If count == 0, instruction is no operation
+			)
+		);
+		il.MarkLabel(trueLabel);
+		// As we hint the flags using IL_FLAGWRITE_CO, we need to define CF after emitting
+		// RLC. To do so we will save the value of the destination operand in a temporary
+		// register and mask it to CF afterward. This will avoid the lifting error messages
+		il.AddInstruction(
+			il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+		);
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.RotateLeftCarry(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
+					il.Flag(IL_FLAG_C), IL_FLAGWRITE_CO)));
+		// Lifting CF
+		// Since the count is masked to 5 or 6 bits, we can just directly get the bit:
+		// CF = test_bit(saved_result, (saved_result_size - (count & mask)) % saved_result_size)
+		// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+		// TODO: Only apply the modulus if the opOneLen is < 32bits?
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_C,
+				il.TestBit(1,
+					il.Register(opOneLen, LLIL_TEMP(0)),
+					il.Sub(opOneLen,
+						il.Const(opOneLen, opOneLen * 8),
+						il.ModUnsigned(opOneLen,
+							il.And(opOneLen,
+								ReadILOperand(il, xedd, addr, 1, 1),
+								il.Const(opOneLen, count_mask)
+							),
+							il.Const(opOneLen, opOneLen * 8)
+						)
+					)
+				)
+			)
+		);
+		// If the masked count is 1, then the OF flag is affected, otherwise
+		// (masked count is greater than 1) the OF flag is undefined.
+		// If the masked count is 0, OF is unaffected as stated above.
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 1)),
+				ofTrueLabel,
+				ofFalseLabel
+			)
+		);
+		il.MarkLabel(ofTrueLabel);
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O,
+				il.Xor(1,
+					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
+					il.Flag(IL_FLAG_C)
+				)
+			)
+		);
+		il.AddInstruction(il.Goto(doneLabel));
+		il.MarkLabel(ofFalseLabel);
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O, il.Undefined())
+		);
+		il.MarkLabel(doneLabel);
 		break;
+	}
 
 	case XED_ICLASS_RCR:
+	{
+		LowLevelILLabel ofTrueLabel, ofFalseLabel;
+		// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+		bool has_rex_prefix = (xedd->_operands.rexw == 1);
+		// TODO: Check if the operand size and not REX.W is sufficient?
+		size_t count_mask = 0b11111;
+		if (has_rex_prefix)
+		{
+			count_mask = 0b111111;
+		}
+		// Check if the count is 0 first:
+		// If the masked count is 0, the flags are not affected.
+		il.AddInstruction(
+			il.If(
+				il.CompareNotEqual(1,
+					// RCR includes CF in the rotation.
+					// Rotating 9 bits on an 8bit register (e.g: cl) is a no-op and flags are not affected
+					// To emulate that we compare equal if (count & mask) % (operand_length + 1) is 0
+					// This is useful because we emulate the CF flag using masks based on the rotation size
+					il.ModUnsigned(1,
+						il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+						il.Const(1, (opOneLen * 8) + 1)),
+					il.Const(1, 0)),
+				trueLabel,
+				doneLabel // If count == 0, instruction is no operation
+			)
+		);
+		il.MarkLabel(trueLabel);
+		// As we hint the flags using IL_FLAGWRITE_CO, we need to define CF after emitting
+		// RRC. To do so we will save the value of the destination operand in a temporary
+		// register and mask it to CF afterward. This will avoid the lifting error messages
+		il.AddInstruction(
+			il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+		);
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.RotateRightCarry(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
-				il.Flag(IL_FLAG_C), IL_FLAGWRITE_ALL)));
+					il.Flag(IL_FLAG_C), IL_FLAGWRITE_CO)));
+		// Lifting CF
+		// Since the count is masked to 5 or 6 bits, we can just directly get the bit:
+		// CF = test_bit(saved_result, ((count & mask) % saved_result_size))
+		// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+		// TODO: Only apply the modulus if the opOneLen is < 32bits?
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_C,
+				il.TestBit(1,
+					il.Register(opOneLen, LLIL_TEMP(0)),
+					il.Sub(1,
+						il.ModUnsigned(opOneLen,
+							il.And(opOneLen,
+								ReadILOperand(il, xedd, addr, 1, 1),
+								il.Const(opOneLen, count_mask)
+							),
+							il.Const(opOneLen, opOneLen * 8)
+						),
+						il.Const(1, 1) // Adjust position -1. Bit start from 0
+					)
+				)
+			)
+		);
+		// If the masked count is 1, then the OF flag is affected, otherwise
+		// (masked count is greater than 1) the OF flag is undefined.
+		// If the masked count is 0, OF is unaffected as stated above.
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 1)),
+				ofTrueLabel,
+				ofFalseLabel
+			)
+		);
+		il.MarkLabel(ofTrueLabel);
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O,
+				il.Xor(1,
+					// This operation happens BEFORE the rotation is performed
+					// Using the saved result instead
+					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
+					il.Flag(IL_FLAG_C)
+				)
+			)
+		);
+		il.AddInstruction(il.Goto(doneLabel));
+		il.MarkLabel(ofFalseLabel);
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O, il.Undefined())
+		);
+		il.MarkLabel(doneLabel);
 		break;
+	}
 
 	case XED_ICLASS_RET_NEAR:
 		if ((opOne_name != XED_OPERAND_IMM0) || (immediateOne == 0))
@@ -2811,22 +2981,135 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_ROL:
+	{
+		LowLevelILLabel ofLabel, ofTrueLabel, ofFalseLabel; // Label for OF lifting
+		// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+		bool has_rex_prefix = (xedd->_operands.rexw == 1);
+		// TODO: Check if the operand size and not REX.W is sufficient?
+		size_t count_mask = 0b11111;
+		if (has_rex_prefix)
+		{
+			count_mask = 0b111111;
+		}
+		// Check if the count is 0 first:
+		// If the masked count is 0, the flags are not affected.
+		il.AddInstruction(
+			il.If(
+				il.CompareNotEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 0)),
+				trueLabel,
+				doneLabel // If count == 0, instruction is a no-op
+			)
+		);
+		il.MarkLabel(trueLabel);
+		// Lift the instruction with the appropriate flag logic
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.RotateLeft(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+				IL_FLAGWRITE_CO)));
+		// The CF flag is only affected when the masked count is nonzero.
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_C,
+				il.And(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, 1)) // Set to LSB
+			)
+		);
+		// If the masked count is 1, then the OF flag is affected, otherwise
+		// (masked count is greater than 1) the OF flag is undefined.
+		// If the masked count is 0, OF is unaffected as stated above.
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 1)),
+				ofTrueLabel,
+				ofFalseLabel
+			)
+		);
+		il.MarkLabel(ofTrueLabel);
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O,
+				il.Xor(1,
+					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
+					il.Flag(IL_FLAG_C)
+				)
+			)
+		);
+		il.AddInstruction(il.Goto(doneLabel));
+		il.MarkLabel(ofFalseLabel);
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O, il.Undefined())
+		);
+		il.MarkLabel(doneLabel);
 		break;
-
+	}
 	case XED_ICLASS_ROR:
+	{
+		LowLevelILLabel ofLabel, ofTrueLabel, ofFalseLabel; // Label for OF lifting
+		// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+		bool has_rex_prefix = (xedd->_operands.rexw == 1);
+		// TODO: Check if the operand size and not REX.W is sufficient?
+		size_t count_mask = 0b11111;
+		if (has_rex_prefix)
+		{
+			count_mask = 0b111111;
+		}
+		// Check if the count is 0 first:
+		// If the masked count is 0, the flags are not affected.
+		il.AddInstruction(
+			il.If(
+				il.CompareNotEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 0)),
+				trueLabel,
+				doneLabel // If count == 0, instruction is a no-op
+			)
+		);
+		il.MarkLabel(trueLabel);
+		// Lift the instruction with the appropriate flag logic
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.RotateRight(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+					IL_FLAGWRITE_CO)));
+		// The CF flag is only affected when the masked count is nonzero.
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_C,
+				il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 1)) // Set to MSB
+			)
+		);
+		// If the masked count is 1, then the OF flag is affected, otherwise
+		// (masked count is greater than 1) the OF flag is undefined.
+		// If the masked count is 0, OF is unaffected as stated above.
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 1)),
+				ofTrueLabel,
+				ofFalseLabel
+			)
+		);
+		il.MarkLabel(ofTrueLabel);
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O, 
+				il.Xor(1,
+					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
+					il.TestBit(1, ReadILOperand(il, xedd, addr, 0, 0), il.Const(1, (opOneLen * 8) - 2)) // Get second to last bit
+				)
+			)
+		);
+		il.AddInstruction(il.Goto(doneLabel));
+		il.MarkLabel(ofFalseLabel);
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O, il.Undefined())
+		);
+		il.MarkLabel(doneLabel);
 		break;
+	}
 
 	// there is no ROLX instruciton
 	case XED_ICLASS_RORX:
@@ -2839,14 +3122,82 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_SAR:
+	{
+		LowLevelILLabel ofLabel, ofTrueLabel, ofFalseLabel; // Label for OF lifting
+		// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+		bool has_rex_prefix = (xedd->_operands.rexw == 1);
+		// TODO: Check if the operand size and not REX.W is sufficient?
+		size_t count_mask = 0b11111;
+		if (has_rex_prefix)
+		{
+			count_mask = 0b111111;
+		}
+		// Check if the count is 0 first:
+		// If the masked count is 0, the flags are not affected.
+		il.AddInstruction(
+			il.If(
+				il.CompareNotEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 0)),
+				trueLabel,
+				doneLabel 	// count is 0, it's a no-op, flag unchanged, OF unde
+			)
+		);
+		// Count non-zero, applying SAR
+		il.MarkLabel(trueLabel);
+		// First, saving the destination operand to a temporary register. This will allow
+		// to extract the carry bit after lifting SAR, and also avoid getting error messages
+		// regarding improper lifted flags.
+		il.AddInstruction(
+			il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+		);
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.ArithShiftRight(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
 				IL_FLAGWRITE_ALL)));
+		// Since the count is masked to 0x1f or 0x3f bits,
+		// we can extract the computed CF bit from the saved destination.
+		// CF = test_bit(saved_result, ((count & mask)) % saved_result_size)
+		// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_C,
+				il.TestBit(1,
+					il.Register(opOneLen, LLIL_TEMP(0)),
+					il.ModUnsigned(opOneLen,
+						il.And(opOneLen,
+							ReadILOperand(il, xedd, addr, 1, 1),
+							il.Const(opOneLen, count_mask)
+						),
+						il.Const(opOneLen, opOneLen * 8)
+					)
+				)
+			)
+		);
+		// For non-zero counts, AF is undefined
+		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+		// The OF flag is affected only for 1 - bit shifts
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 1)),
+				ofTrueLabel,
+				ofFalseLabel
+			)
+		);
+		il.MarkLabel(ofTrueLabel);
+		// For the SAR instruction, the OF flag is cleared for all 1 - bit shifts.
+		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Const(1, 0)));
+		il.AddInstruction(il.Goto(doneLabel));
+		il.MarkLabel(ofFalseLabel);
+		// If count is not 0 nor 1, OF is undefined.
+		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Undefined()));
+		// The SF, ZF, and PF flags are set according to the result
+		il.MarkLabel(doneLabel);
 		break;
-
+	}
 	case XED_ICLASS_SARX:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
@@ -2999,25 +3350,179 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		break;
 
 	case XED_ICLASS_SHL:
+	{
+		LowLevelILLabel ofLabel, ofTrueLabel, ofFalseLabel; // Label for OF lifting
+		// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+		bool has_rex_prefix = (xedd->_operands.rexw == 1);
+		// TODO: Check if the operand size and not REX.W is sufficient?
+		size_t count_mask = 0b11111;
+		if (has_rex_prefix)
+		{
+			count_mask = 0b111111;
+		}
+		// Check if the count is 0 first:
+		// If the masked count is 0, the flags are not affected.
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 0)),
+				trueLabel,
+				doneLabel // count is 0, it's a no-op, flag unchanged, OF unde
+			)
+		);
+		// Count non-zero, applying SAR
+		il.MarkLabel(trueLabel);
+		// First, saving the destination operand to a temporary register. This will allow
+		// to extract the carry bit after lifting SHL, and also avoid getting error messages
+		// regarding improper lifted flags.
+		il.AddInstruction(
+			il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+		);
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.ShiftLeft(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+					IL_FLAGWRITE_ALL)));
+		// Since the count is masked to 0x1f or 0x3f bits,
+		// we can extract the computed CF bit from the saved destination.
+		// CF = test_bit(saved_result, (saved_result_size - (count & mask)) % saved_result_size)
+		// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+		// TODO: Only apply the modulus if the opOneLen is < 32bits?
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_C,
+				il.TestBit(1,
+					il.Register(opOneLen, LLIL_TEMP(0)),
+					il.ModUnsigned(opOneLen,
+						il.Sub(opOneLen,
+							il.Const(opOneLen, opOneLen * 8),
+							il.And(opOneLen,
+								ReadILOperand(il, xedd, addr, 1, 1),
+								il.Const(opOneLen, count_mask)
+							)
+						),
+						il.Const(opOneLen, opOneLen * 8) // Get the MSB
+					)
+				)
+			)
+		);
+		// For non-zero counts, AF is undefined
+		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+		// The OF flag is affected only for 1 bit shifts
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 1)
+				),
+				ofTrueLabel,
+				ofFalseLabel
+			)
+		);
+		il.MarkLabel(ofTrueLabel);
+		// For left shifts, the OF flag is set to 0 if the most-significant bit of the
+		// result is the same as the CF flag.
+		// (that is, the top two bits of the original operand were the same)
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O,
+				il.Xor(1,
+					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1)), // Get the MSB
+					il.Flag(IL_FLAG_C)
+				)
+			)
+		);
+		il.AddInstruction(il.Goto(doneLabel));
+		il.MarkLabel(ofFalseLabel);
+		// If count is not 0 nor 1, OF is undefined.
+		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Undefined()));
+		// The SF, ZF, and PF flags are set according to the result
+		il.MarkLabel(doneLabel);
 		break;
-
-	// This is imprecise since it does NOT move the last shifted bit into CF
-	// the same problem also happens on SHL, SAR
-	case XED_ICLASS_SHR:
+	}
+	case XED_ICLASS_SHR: 
+	{
+		LowLevelILLabel ofLabel, ofTrueLabel, ofFalseLabel; // Label for OF lifting
+		// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+		bool has_rex_prefix = (xedd->_operands.rexw == 1);
+		// TODO: Check if the operand size and not REX.W is sufficient?
+		size_t count_mask = 0b11111;
+		if (has_rex_prefix)
+		{
+			count_mask = 0b111111;
+		}
+		// Check if the count is 0 first:
+		// If the masked count is 0, the flags are not affected.
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 0)),
+				doneLabel, 	// count is 0, it's a no-op, flag unchanged, OF unde
+				falseLabel
+			)
+		);
+		// Count non-zero, applying SAR
+		il.MarkLabel(falseLabel);
+		// First, saving the destination operand to a temporary register. This will allow
+		// to extract the carry bit after lifting SHR, and also avoid getting error messages
+		// regarding improper lifted flags.
+		il.AddInstruction(
+			il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+		);
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.LogicalShiftRight(opOneLen,
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
-				IL_FLAGWRITE_ALL)));
+					IL_FLAGWRITE_ALL)));
+		// Since the count is masked to 0x1f or 0x3f bits,
+		// we can extract the computed CF bit from the saved destination.
+		// CF = test_bit(saved_result, ((count & mask)) % saved_result_size)
+		// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_C,
+				il.TestBit(1,
+					il.Register(opOneLen, LLIL_TEMP(0)),
+					il.ModUnsigned(opOneLen,
+						il.And(opOneLen,
+							ReadILOperand(il, xedd, addr, 1, 1),
+							il.Const(opOneLen, count_mask)
+						),
+						il.Const(opOneLen, opOneLen * 8)
+					)
+				)
+			)
+		);
+		// For non-zero counts, AF is undefined
+		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+		// The OF flag is affected only for 1 bit shifts
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 1)
+				),
+				ofTrueLabel,
+				ofFalseLabel
+			)
+		);
+		il.MarkLabel(ofTrueLabel);
+		// For the SHR instruction, the OF flag is set to the most
+		// significant bit of the original operand. (pre-shift)
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O,
+				il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1))
+			)
+		);
+		il.AddInstruction(il.Goto(doneLabel));
+		il.MarkLabel(ofFalseLabel);
+		// If count is not 0 nor 1, OF is undefined.
+		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Undefined()));
+		// The SF, ZF, and PF flags are set according to the result
+		il.MarkLabel(doneLabel);
 		break;
-
+	}
 	case XED_ICLASS_SHLX:
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
@@ -3040,33 +3545,145 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		size_t opSize = opOneLen;
 		size_t mask = opSize == 4 ? 31 : 63;
+			LowLevelILLabel ofLabel, ofTrueLabel, ofFalseLabel; // Label for OF lifting
+			// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+			bool has_rex_prefix = (xedd->_operands.rexw == 1);
+			// TODO: Check if the operand size and not REX.W is sufficient?
+			size_t count_mask = 0b11111;
+			if (has_rex_prefix)
+			{
+				count_mask = 0b111111;
+			}
+			// Check if the count is 0 first:
+			// If the masked count is 0, the flags are not affected.
+			il.AddInstruction(
+				il.If(
+					il.CompareEqual(1,
+						il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+						il.Const(1, 0)),
+					doneLabel, 	// count is 0, it's a no-op, flag unchanged, OF unde
+					falseLabel
+				)
+			);
+			// Count non-zero, applying SAR
+			il.MarkLabel(falseLabel);
+			// First, saving the destination operand to a temporary register. This will allow
+			// to extract the carry bit after lifting SHL, and also avoid getting error messages
+			// regarding improper lifted flags.
+			il.AddInstruction(
+				il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+			);
 
-		// Shift left double: operand[0] = operand[0]:operand[1] << operand[3]
-		// this since we can't easily operation on a combined register we do it like this
-		// operand[0] = (operand[0] << operand[3]) | (operand[1] >> (63|32 - operand[3]))
-		// One final cevate operand[3] must be masked with 63|32
-		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
-			il.Or(opSize,
-				il.ShiftLeft(opSize,
-					ReadILOperand(il, xedd, addr, 0, 0),
-					il.And(opSize,
-						il.Const(1, mask),
-						ReadILOperand(il, xedd, addr, 2, 2)),
-					IL_FLAGWRITE_ALL),
-				il.LogicalShiftRight(opSize,
-					ReadILOperand(il, xedd, addr, 1, 1),
-					il.Sub(opSize,
+			// Shift left double: operand[0] = operand[0]:operand[1] << operand[3]
+			// this since we can't easily operation on a combined register we do it like this
+			// operand[0] = (operand[0] << operand[3]) | (operand[1] >> (63|32 - operand[3]))
+			// One final cevate operand[3] must be masked with 63|32
+			il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
+				il.Or(opSize,
+					il.ShiftLeft(opSize,
+						ReadILOperand(il, xedd, addr, 0, 0),
 						il.And(opSize,
 							il.Const(1, mask),
 							ReadILOperand(il, xedd, addr, 2, 2)),
-						il.Const(1, opSize * 8))))));
-		break;
+						IL_FLAGWRITE_ALL),
+					il.LogicalShiftRight(opSize,
+						ReadILOperand(il, xedd, addr, 1, 1),
+						il.Sub(opSize,
+							il.And(opSize,
+								il.Const(1, mask),
+								ReadILOperand(il, xedd, addr, 2, 2)),
+							il.Const(1, opSize * 8))))));
+			il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+			// Since the count is masked to 0x1f or 0x3f bits,
+			// we can extract the computed CF bit from the saved destination.
+			// CF = test_bit(saved_result, (saved_result_size - (count & mask)) % saved_result_size)
+			// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+			// Also, as SHLD masks the shift to 5 or 6 bits depending on the addressing we only need to
+			// get the bit from the first operand.
+			// TODO: Only apply the modulus if the opOneLen is < 32bits?
+			il.AddInstruction(
+				il.SetFlag(IL_FLAG_C,
+					il.TestBit(1,
+						il.Register(opOneLen, LLIL_TEMP(0)),
+						il.ModUnsigned(opOneLen,
+							il.Sub(opOneLen,
+								il.Const(opOneLen, opOneLen * 8),
+								il.And(opOneLen,
+									ReadILOperand(il, xedd, addr, 1, 1),
+									il.Const(opOneLen, count_mask)
+								)
+							),
+							il.Const(opOneLen, opOneLen * 8)
+						)
+					)
+				)
+			);
+			// The OF flag is affected only for 1 bit shifts
+			il.AddInstruction(
+				il.If(
+					il.CompareEqual(1,
+						il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+						il.Const(1, 1)
+					),
+					ofTrueLabel,
+					ofFalseLabel
+				)
+			);
+			il.MarkLabel(ofTrueLabel);
+			// For left shifts, the OF flag is set to 0 if the most-significant bit of the
+			// result is the same as the CF flag.
+			// (that is, the top two bits of the original operand were the same)
+			il.AddInstruction(
+				il.SetFlag(IL_FLAG_O,
+					il.Xor(1,
+						il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, opOneLen * 8)),
+						il.Flag(IL_FLAG_C)
+					)
+				)
+			);
+			il.AddInstruction(il.Goto(doneLabel));
+			il.MarkLabel(ofFalseLabel);
+			// If count is not 0 nor 1, OF is undefined.
+			il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Undefined()));
+			// The SF, ZF, and PF flags are set according to the result
+			// For non-zero counts, AF is undefined
+			il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+			il.MarkLabel(doneLabel);
+			break;
+
 	}
 	case XED_ICLASS_SHRD:
 	{
 		size_t opSize = opOneLen;
 		size_t mask = opSize == 4 ? 31 : 63;
-
+		LowLevelILLabel ofLabel, ofTrueLabel, ofFalseLabel; // Label for OF lifting
+				// The count is masked to 5 bits (or 6 bits if in 64-bit mode and REX.W = 1).
+		bool has_rex_prefix = (xedd->_operands.rexw == 1);
+		// TODO: Check if the operand size and not REX.W is sufficient?
+		size_t count_mask = 0b11111;
+		if (has_rex_prefix)
+		{
+			count_mask = 0b111111;
+		}
+		// Check if the count is 0 first:
+		// If the masked count is 0, the flags are not affected.
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 0)),
+				doneLabel, 	// count is 0, it's a no-op, flag unchanged, OF unde
+				falseLabel
+			)
+		);
+		// Count non-zero, applying SAR
+		il.MarkLabel(falseLabel);
+		// First, saving the destination operand to a temporary register. This will allow
+		// to extract the carry bit after lifting SHR, and also avoid getting error messages
+		// regarding improper lifted flags.
+		il.AddInstruction(
+			il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+		);
 		// Shift right double: operand[0] = operand[0]:operand[1] >> operand[3]
 		// this since we can't easily operation on a combined register we do it like this
 		// operand[0] = (operand[0] >> operand[3]) | (operand[1] << (63|31 - operand[3]))
@@ -3086,6 +3703,54 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.And(opSize,
 							il.Const(1, mask),
 							ReadILOperand(il, xedd, addr, 2, 2)))))));
+		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+		// Since the count is masked to 0x1f or 0x3f bits,
+		// we can extract the computed CF bit from the saved destination.
+		// CF = test_bit(saved_result, ((count & mask)) % saved_result_size)
+		// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+		// Also, as SHLD masks the shift to 5 or 6 bits depending on the addressing we only need to
+		// get the bit from the first operand.
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_C,
+				il.TestBit(1,
+					il.Register(opOneLen, LLIL_TEMP(0)),
+					il.ModUnsigned(opOneLen,
+						il.And(opOneLen,
+							ReadILOperand(il, xedd, addr, 1, 1),
+							il.Const(opOneLen, count_mask)
+						),
+						il.Const(opOneLen, opOneLen * 8)
+					)
+				)
+			)
+		);
+		// The OF flag is affected only for 1 bit shifts
+		il.AddInstruction(
+			il.If(
+				il.CompareEqual(1,
+					il.And(1, ReadILOperand(il, xedd, addr, 1, 1), il.Const(1, count_mask)),
+					il.Const(1, 1)
+				),
+				ofTrueLabel,
+				ofFalseLabel
+			)
+		);
+		il.MarkLabel(ofTrueLabel);
+		// For the SHR instruction, the OF flag is set to the most
+		// significant bit of the original operand. (pre-shift)
+		il.AddInstruction(
+			il.SetFlag(IL_FLAG_O,
+				il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, opOneLen * 8))
+			)
+		);
+		il.AddInstruction(il.Goto(doneLabel));
+		il.MarkLabel(ofFalseLabel);
+		// If count is not 0 nor 1, OF is undefined.
+		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Undefined()));
+		// The SF, ZF, and PF flags are set according to the result
+		// For non-zero counts, AF is undefined
+		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+		il.MarkLabel(doneLabel);
 		break;
 	}
 	case XED_ICLASS_STOSB:
