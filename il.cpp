@@ -2786,6 +2786,59 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		{
 			count_mask = 0b111111;
 		}
+
+		// Check whether the second operand is an integer, e.g., shr eax, 0x5
+		if (xed_decoded_inst_operand_element_type(xedd, 1) == XED_OPERAND_ELEMENT_TYPE_UINT)
+		{
+			size_t shiftBits = immediateOne & count_mask;
+			// Check if the count is 0 first:
+			// If the masked count is 0, the flags are not affected.
+			if (shiftBits == 0)
+			{
+				il.AddInstruction(il.Nop());
+				break;
+			}
+
+			// First, saving the destination operand to a temporary register. This will allow
+			// to extract the carry bit after lifting SHR, and also avoid getting error messages
+			// regarding improper lifted flags.
+			il.AddInstruction(
+				il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+			);
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateLeftCarry(opOneLen,
+						ReadILOperand(il, xedd, addr, 0, 0),
+						ReadILOperand(il, xedd, addr, 1, 1),
+						il.Flag(IL_FLAG_C), IL_FLAGWRITE_CO)));
+
+			size_t carryBitIndex = opOneLen * 8 - shiftBits % (opOneLen * 8);
+			// Lifting CF
+			// Since the count is masked to 5 or 6 bits, we can just directly get the bit:
+			// CF = test_bit(saved_result, (saved_result_size - (count & mask)) % saved_result_size)
+			// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+			// TODO: Only apply the modulus if the opOneLen is < 32bits?
+			il.AddInstruction(
+				il.SetFlag(IL_FLAG_C,
+					il.TestBit(1,
+						il.Register(opOneLen, LLIL_TEMP(0)),
+						il.Const(1, carryBitIndex)
+						)
+					)
+				)
+			);
+
+			// For non-zero counts, AF is undefined
+			il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+			if (shiftBits == 1)
+			{
+				il.SetFlag(IL_FLAG_O,
+					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1))
+				);
+			}
+			break;
+		}
+
 		// Check if the count is 0 first:
 		// If the masked count is 0, the flags are not affected.
 		il.AddInstruction(
@@ -2879,6 +2932,59 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		{
 			count_mask = 0b111111;
 		}
+
+		// Check whether the second operand is an integer, e.g., shr eax, 0x5
+		if (xed_decoded_inst_operand_element_type(xedd, 1) == XED_OPERAND_ELEMENT_TYPE_UINT)
+		{
+			size_t shiftBits = immediateOne & count_mask;
+			// Check if the count is 0 first:
+			// If the masked count is 0, the flags are not affected.
+			if (shiftBits == 0)
+			{
+				il.AddInstruction(il.Nop());
+				break;
+			}
+
+			// First, saving the destination operand to a temporary register. This will allow
+			// to extract the carry bit after lifting SHR, and also avoid getting error messages
+			// regarding improper lifted flags.
+			il.AddInstruction(
+				il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+			);
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateRightCarry(opOneLen,
+						ReadILOperand(il, xedd, addr, 0, 0),
+						ReadILOperand(il, xedd, addr, 1, 1),
+						il.Flag(IL_FLAG_C), IL_FLAGWRITE_CO)));
+
+			size_t carryBitIndex = shiftBits % (opOneLen * 8);
+			// Lifting CF
+			// Since the count is masked to 5 or 6 bits, we can just directly get the bit:
+			// CF = test_bit(saved_result, (saved_result_size - (count & mask)) % saved_result_size)
+			// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+			// TODO: Only apply the modulus if the opOneLen is < 32bits?
+			il.AddInstruction(
+				il.SetFlag(IL_FLAG_C,
+					il.TestBit(1,
+						il.Register(opOneLen, LLIL_TEMP(0)),
+						il.Const(1, carryBitIndex)
+						)
+					)
+				)
+			);
+
+			// For non-zero counts, AF is undefined
+			il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+			if (shiftBits == 1)
+			{
+				il.SetFlag(IL_FLAG_O,
+					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1))
+				);
+			}
+			break;
+		}
+
 		// Check if the count is 0 first:
 		// If the masked count is 0, the flags are not affected.
 		il.AddInstruction(
@@ -2991,6 +3097,59 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		{
 			count_mask = 0b111111;
 		}
+
+		// Check whether the second operand is an integer, e.g., shr eax, 0x5
+		if (xed_decoded_inst_operand_element_type(xedd, 1) == XED_OPERAND_ELEMENT_TYPE_UINT)
+		{
+			size_t shiftBits = immediateOne & count_mask;
+			// Check if the count is 0 first:
+			// If the masked count is 0, the flags are not affected.
+			if (shiftBits == 0)
+			{
+				il.AddInstruction(il.Nop());
+				break;
+			}
+
+			// First, saving the destination operand to a temporary register. This will allow
+			// to extract the carry bit after lifting SHR, and also avoid getting error messages
+			// regarding improper lifted flags.
+			il.AddInstruction(
+				il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+			);
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.RotateRightCarry(opOneLen,
+						ReadILOperand(il, xedd, addr, 0, 0),
+						ReadILOperand(il, xedd, addr, 1, 1),
+						il.Flag(IL_FLAG_C), IL_FLAGWRITE_CO)));
+
+			size_t carryBitIndex = shiftBits % (opOneLen * 8);
+			// Lifting CF
+			// Since the count is masked to 5 or 6 bits, we can just directly get the bit:
+			// CF = test_bit(saved_result, (saved_result_size - (count & mask)) % saved_result_size)
+			// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+			// TODO: Only apply the modulus if the opOneLen is < 32bits?
+			il.AddInstruction(
+				il.SetFlag(IL_FLAG_C,
+					il.TestBit(1,
+						il.Register(opOneLen, LLIL_TEMP(0)),
+						il.Const(1, carryBitIndex)
+						)
+					)
+				)
+			);
+
+			// For non-zero counts, AF is undefined
+			il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+			if (shiftBits == 1)
+			{
+				il.SetFlag(IL_FLAG_O,
+					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1))
+				);
+			}
+			break;
+		}
+
 		// Check if the count is 0 first:
 		// If the masked count is 0, the flags are not affected.
 		il.AddInstruction(
@@ -3451,6 +3610,55 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		{
 			count_mask = 0b111111;
 		}
+
+		// Check whether the second operand is an integer, e.g., shr eax, 0x5
+		if (xed_decoded_inst_operand_element_type(xedd, 1) == XED_OPERAND_ELEMENT_TYPE_UINT)
+		{
+			size_t shiftBits = immediateOne & count_mask;
+			// Check if the count is 0 first:
+			// If the masked count is 0, the flags are not affected.
+			if (shiftBits == 0)
+			{
+				il.AddInstruction(il.Nop());
+				break;
+			}
+
+			// First, saving the destination operand to a temporary register. This will allow
+			// to extract the carry bit after lifting SHR, and also avoid getting error messages
+			// regarding improper lifted flags.
+			il.AddInstruction(
+				il.SetRegister(opOneLen, LLIL_TEMP(0), ReadILOperand(il, xedd, addr, 0, 0))
+			);
+			il.AddInstruction(
+				WriteILOperand(il, xedd, addr, 0, 0,
+					il.LogicalShiftRight(opOneLen,
+						ReadILOperand(il, xedd, addr, 0, 0),
+						il.Const(1, shiftBits),
+						IL_FLAGWRITE_ALL)));
+			// Since the count is masked to 0x1f or 0x3f bits,
+			// we can extract the computed CF bit from the saved destination.
+			// CF = test_bit(saved_result, ((count & mask)) % saved_result_size)
+			// Adjusting to modulo because first operand can be 16bits, but the masked count can be higher
+			size_t carryBitIndex = shiftBits % (opOneLen * 8);
+			il.AddInstruction(
+				il.SetFlag(IL_FLAG_C,
+					il.TestBit(1,
+						il.Register(opOneLen, LLIL_TEMP(0)),
+						il.Const(1, carryBitIndex)
+					)
+				)
+			);
+			// For non-zero counts, AF is undefined
+			il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
+			if (shiftBits == 1)
+			{
+				il.SetFlag(IL_FLAG_O,
+					il.TestBit(1, il.Register(opOneLen, LLIL_TEMP(0)), il.Const(1, (opOneLen * 8) - 1))
+				);
+			}
+			break;
+		}
+
 		// Check if the count is 0 first:
 		// If the masked count is 0, the flags are not affected.
 		il.AddInstruction(
