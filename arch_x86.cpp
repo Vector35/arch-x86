@@ -2107,11 +2107,15 @@ size_t X86CommonArchitecture::GetFlagWriteLowLevelIL(BNLowLevelILOperation op, s
 		}
 		break;
 	case LLIL_XOR:
+	case LLIL_AND:
+	case LLIL_OR:
 		switch (flag)
 		{
 		case IL_FLAG_C:
 		case IL_FLAG_O:
 			return il.Const(0, 0);
+		case IL_FLAG_A:
+			return il.Undefined();
 		}
 		break;
 	case LLIL_MULU_DP:
