@@ -674,9 +674,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
 					IL_FLAGWRITE_ALL)));
-		il.AddInstruction(il.SetFlag(IL_FLAG_C, il.Const(1, 0)));
-		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Const(1, 0)));
-		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
 		break;
 	case XED_ICLASS_PAND:
 		il.AddInstruction(
@@ -2630,9 +2627,6 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					ReadILOperand(il, xedd, addr, 0, 0),
 					ReadILOperand(il, xedd, addr, 1, 1),
 				IL_FLAGWRITE_ALL)));
-		il.AddInstruction(il.SetFlag(IL_FLAG_C, il.Const(1, 0)));
-		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Const(1, 0)));
-		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Undefined()));
 		break;
 	case XED_ICLASS_POR:
 		il.AddInstruction(
@@ -3838,8 +3832,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					opOneLen,
 					ReadFloatILOperand(il, xedd, addr, 0, 0),
 					ReadFloatILOperand(il, xedd, addr, 1, 1)
-				),
-				0 // Don't modify any flags
+				)
 			)
 		);
 		ExprId set_zero_flag_insn = il.SetFlag(IL_FLAG_Z,
@@ -3854,8 +3847,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					opOneLen,
 					ReadFloatILOperand(il, xedd, addr, 0, 0),
 					ReadFloatILOperand(il, xedd, addr, 1, 1)
-				),
-				0 // Don't modify any flags
+				)
 			)
 		);
 		il.AddInstruction(set_parity_flag_expr);
