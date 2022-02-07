@@ -1120,9 +1120,6 @@ void X86CommonArchitecture::GetOperandTextBNIntel(const xed_decoded_inst_t* cons
 				continue;
 		}
 
-		if ((xed_operand_operand_visibility(op) == XED_OPVIS_IMPLICIT) && (xed_decoded_inst_get_reg(xedd, op_name) == XED_REG_ST0))
-			continue;
-
 		switch(op_name)
 		{
 		case XED_OPERAND_REG0:
@@ -1464,8 +1461,7 @@ void X86CommonArchitecture::GetOperandTextBNIntel(const xed_decoded_inst_t* cons
 		// If there is another operand and it is visable, print delimiter
 		if ((opIndex != xed_inst_noperands(xi)-1) &&
 			((xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_EXPLICIT) ||
-				((xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_IMPLICIT) &&
-				(xed_decoded_inst_get_reg(xedd, xed_operand_name(xed_inst_operand(xi, opIndex+1))) != XED_REG_ST0))))
+				(xed_operand_operand_visibility(xed_inst_operand(xi, opIndex+1)) == XED_OPVIS_IMPLICIT)))
 				result.emplace_back(OperandSeparatorToken, m_disassembly_options.separator);
 	}
 
