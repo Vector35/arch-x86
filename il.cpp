@@ -3438,7 +3438,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			il.RegisterStackPush(10,
 				REG_STACK_X87,
-				ReadFloatILOperand(il, xedd, addr, 0, 1)));
+				ReadFloatILOperand(il, xedd, addr, 1, 1)));
 		break;
 
 	case XED_ICLASS_FILD:
@@ -3610,7 +3610,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				il.FloatAdd(10,
 					il.Register(10, XED_REG_ST0),
 					il.IntToFloat(10,
-						ReadILOperand(il, xedd, addr, 0, 1)),
+						ReadILOperand(il, xedd, addr, 1, 1)),
 			IL_FLAGWRITE_X87RND)));
 		break;
 
@@ -3636,7 +3636,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(il.SetRegister(10, XED_REG_ST0,
 			il.FloatSub(10,
 				il.Register(10, XED_REG_ST0),
-				il.IntToFloat(10, ReadILOperand(il, xedd, addr, 0, 1)),
+				il.IntToFloat(10, ReadILOperand(il, xedd, addr, 1, 1)),
 			IL_FLAGWRITE_X87RND)));
 		break;
 
@@ -3665,7 +3665,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			  XED_REG_ST0,
 					il.FloatSub(10,
 						il.IntToFloat(10,
-							ReadILOperand(il, xedd, addr, 0, 1)),
+							ReadILOperand(il, xedd, addr, 1, 1)),
 						il.Register(10, XED_REG_ST0),
 			IL_FLAGWRITE_X87RND)));
 		break;
@@ -3695,7 +3695,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				il.FloatMult(10,
 					il.Register(10, XED_REG_ST0),
 					il.IntToFloat(10,
-						ReadILOperand(il, xedd, addr, 0, 1)),
+						ReadILOperand(il, xedd, addr, 1, 1)),
 			IL_FLAGWRITE_X87RND)));
 		break;
 
@@ -3724,7 +3724,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			il.FloatDiv(10,
 				il.Register(10, XED_REG_ST0),
 				il.IntToFloat(10,
-					ReadILOperand(il, xedd, addr, 0, 1)),
+					ReadILOperand(il, xedd, addr, 1, 1)),
 			IL_FLAGWRITE_X87RND)));
 		break;
 
@@ -3741,7 +3741,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			WriteILOperand(il, xedd, addr, 0, 0,
 				il.FloatDiv(10,
-					ReadFloatILOperand(il, xedd, addr, 0, 1),
+					ReadFloatILOperand(il, xedd, addr, 1, 1),
 					il.Register(10, XED_REG_ST0))));
 		il.AddInstruction(il.RegisterStackFreeReg(XED_REG_ST0));
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Add(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
@@ -3752,7 +3752,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			il.SetRegister(10, XED_REG_ST0,
 				il.FloatDiv(10,
 					il.IntToFloat(10,
-						ReadILOperand(il, xedd, addr, 0, 1)),
+						ReadILOperand(il, xedd, addr, 1, 1)),
 						il.Register(10, XED_REG_ST0),
 			IL_FLAGWRITE_X87RND)));
 		break;
@@ -3879,7 +3879,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			il.FloatSub(10,
 				il.Register(10, XED_REG_ST0),
-				ReadFloatILOperand(il, xedd, addr, 0, 1),
+				ReadFloatILOperand(il, xedd, addr, 1, 1),
 			IL_FLAGWRITE_X87COM));
 		break;
 
@@ -3888,7 +3888,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			il.FloatSub(10,
 				il.Register(10, XED_REG_ST0),
 				il.IntToFloat(10,
-					ReadILOperand(il, xedd, addr, 0, 1)),
+					ReadILOperand(il, xedd, addr, 1, 1)),
 			IL_FLAGWRITE_X87COM));
 		break;
 
@@ -3897,7 +3897,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(
 			il.FloatSub(10,
 				il.Register(10, XED_REG_ST0),
-				ReadFloatILOperand(il, xedd, addr, 0, 1),
+				ReadFloatILOperand(il, xedd, addr, 1, 1),
 			IL_FLAGWRITE_X87COM));
 		il.AddInstruction(il.RegisterStackFreeReg(XED_REG_ST0));
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Add(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
@@ -3908,7 +3908,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 			il.FloatSub(10,
 				il.Register(10, XED_REG_ST0),
 				il.IntToFloat(10,
-					ReadILOperand(il, xedd, addr, 0, 1)),
+					ReadILOperand(il, xedd, addr, 1, 1)),
 			IL_FLAGWRITE_X87COM));
 		il.AddInstruction(il.RegisterStackFreeReg(XED_REG_ST0));
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Add(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
@@ -3954,7 +3954,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_FBLD:
 		il.AddInstruction(il.SetRegister(2, REG_X87_TOP, il.Sub(2, il.Register(2, REG_X87_TOP), il.Const(2, 1))));
 		il.AddInstruction(il.Intrinsic(vector<RegisterOrFlag> { RegisterOrFlag::Register(XED_REG_ST0) },
-			INTRINSIC_FBLD, vector<ExprId> { ReadILOperand(il, xedd, addr, 0, 1) }, IL_FLAGWRITE_X87C1Z));
+			INTRINSIC_FBLD, vector<ExprId> { ReadILOperand(il, xedd, addr, 1, 1) }, IL_FLAGWRITE_X87C1Z));
 		break;
 
 	case XED_ICLASS_FBSTP:
