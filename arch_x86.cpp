@@ -3809,7 +3809,7 @@ public:
 
 	virtual uint32_t GetFloatReturnValueRegister() override
 	{
-		return XED_REG_XMM0;
+		return XED_REG_ZMM0;
 	}
 
 	virtual RegisterValue GetIncomingFlagValue(uint32_t flag, Function*) override
