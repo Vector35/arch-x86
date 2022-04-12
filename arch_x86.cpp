@@ -3839,7 +3839,7 @@ public:
 
 	virtual vector<uint32_t> GetFloatArgumentRegisters() override
 	{
-		return vector<uint32_t> { XED_REG_XMM0, XED_REG_XMM1, XED_REG_XMM2, XED_REG_XMM3, XED_REG_XMM4, XED_REG_XMM5, XED_REG_XMM6, XED_REG_XMM7 };
+		return vector<uint32_t> { XED_REG_ZMM0, XED_REG_ZMM1, XED_REG_ZMM2, XED_REG_ZMM3, XED_REG_ZMM4, XED_REG_ZMM5, XED_REG_ZMM6, XED_REG_ZMM7 };
 	}
 
 	virtual vector<uint32_t> GetCallerSavedRegisters() override
@@ -3848,7 +3848,7 @@ public:
 			XED_REG_RAX, XED_REG_RCX, XED_REG_RDX,
 			XED_REG_RSI, XED_REG_RDI,
 			XED_REG_R8, XED_REG_R9, XED_REG_R10, XED_REG_R11,
-			XED_REG_XMM0, XED_REG_XMM1, XED_REG_XMM2, XED_REG_XMM3, XED_REG_XMM4, XED_REG_XMM5, XED_REG_XMM6, XED_REG_XMM7, XED_REG_XMM8, XED_REG_XMM9, XED_REG_XMM10, XED_REG_XMM11, XED_REG_XMM12, XED_REG_XMM13, XED_REG_XMM14, XED_REG_XMM15 };
+			XED_REG_ZMM0, XED_REG_ZMM1, XED_REG_ZMM2, XED_REG_ZMM3, XED_REG_ZMM4, XED_REG_ZMM5, XED_REG_ZMM6, XED_REG_ZMM7, XED_REG_ZMM8, XED_REG_ZMM9, XED_REG_ZMM10, XED_REG_ZMM11, XED_REG_ZMM12, XED_REG_ZMM13, XED_REG_ZMM14, XED_REG_ZMM15 };
 	}
 
 	virtual vector<uint32_t> GetCalleeSavedRegisters() override
@@ -3874,7 +3874,7 @@ public:
 
 	virtual vector<uint32_t> GetFloatArgumentRegisters() override
 	{
-		return vector<uint32_t> { XED_REG_XMM0, XED_REG_XMM1, XED_REG_XMM2, XED_REG_XMM3 };
+		return vector<uint32_t> { XED_REG_ZMM0, XED_REG_ZMM1, XED_REG_ZMM2, XED_REG_ZMM3 };
 	}
 
 	virtual vector<uint32_t> GetCallerSavedRegisters() override
@@ -3882,7 +3882,7 @@ public:
 		return vector<uint32_t> {
 			XED_REG_RAX, XED_REG_RCX, XED_REG_RDX,
 			XED_REG_R8, XED_REG_R9, XED_REG_R10, XED_REG_R11,
-			XED_REG_XMM4, XED_REG_XMM5 };
+			XED_REG_ZMM4, XED_REG_ZMM5 };
 	}
 
 	virtual vector<uint32_t> GetCalleeSavedRegisters() override
