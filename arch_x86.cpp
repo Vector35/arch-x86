@@ -3734,6 +3734,11 @@ public:
 	{
 		return vector<uint32_t>{ XED_REG_ECX, XED_REG_EDX };
 	}
+
+	virtual bool IsStackAdjustedOnReturn() override
+	{
+		return true;
+	}
 };
 
 
@@ -3747,6 +3752,11 @@ public:
 	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
 	{
 		return vector<uint32_t>{ XED_REG_ECX };
+	}
+
+	virtual bool IsStackAdjustedOnReturn() override
+	{
+		return true;
 	}
 };
 
