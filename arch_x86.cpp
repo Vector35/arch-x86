@@ -448,7 +448,7 @@ void X86CommonArchitecture::SetInstructionInfoForInstruction(uint64_t addr, Inst
 	const uint64_t               abs_br = xed_decoded_inst_get_branch_displacement(xedd) + addr + xed_decoded_inst_get_length(xedd);
 	const xed_iform_enum_t   xedd_iForm = xed_decoded_inst_get_iform_enum(xedd);
 	const xed_iclass_enum_t xedd_iClass = xed_decoded_inst_get_iclass(xedd);
-
+	const uint64_t         immediateOne = xed_decoded_inst_get_unsigned_immediate(xedd);
 	// 1. First parse 'generally', by instruction category, then
 	// 2. break down to special cases and impliment iclass and possibly iform-specific cases
 
@@ -475,7 +475,7 @@ void X86CommonArchitecture::SetInstructionInfoForInstruction(uint64_t addr, Inst
 	case XED_CATEGORY_INTERRUPT:
 		if (xed_decoded_inst_get_unsigned_immediate(xedd) == 0x80)
 			result.AddBranch(SystemCall);
-		else if (xedd_iClass == XED_ICLASS_INT3)
+		else if (xedd_iClass == XED_ICLASS_INT3 || (xedd_iClass == XED_ICLASS_INT && immediateOne == 0x29))
 			result.AddBranch(ExceptionBranch);
 		break;
 
