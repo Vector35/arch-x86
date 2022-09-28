@@ -4797,15 +4797,11 @@ extern "C"
 		BinaryViewType::RegisterArchitecture("COFF", 0x14c, LittleEndian, x86);
 		BinaryViewType::RegisterArchitecture("PE", 0x14c, LittleEndian, x86);
 		BinaryViewType::RegisterArchitecture("Mach-O", 0x00000007, LittleEndian, x86);
-		x86->SetBinaryViewTypeConstant("ELF", "R_COPY", 5);
-		x86->SetBinaryViewTypeConstant("ELF", "R_JUMP_SLOT", 7);
 
 		BinaryViewType::RegisterArchitecture("ELF", 62, LittleEndian, x64);
 		BinaryViewType::RegisterArchitecture("COFF", 0x8664, LittleEndian, x64);
 		BinaryViewType::RegisterArchitecture("PE", 0x8664, LittleEndian, x64);
 		BinaryViewType::RegisterArchitecture("Mach-O", 0x01000007, LittleEndian, x64);
-		x64->SetBinaryViewTypeConstant("ELF", "R_COPY", 5);
-		x64->SetBinaryViewTypeConstant("ELF", "R_JUMP_SLOT", 7);
 
 		return true;
 	}
