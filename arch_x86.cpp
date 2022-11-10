@@ -2206,7 +2206,7 @@ string X86CommonArchitecture::GetFlagName(uint32_t flag)
 	case IL_FLAG_C3:
 		return "c3";
 	default:
-		sprintf(result, "flag%" PRIu32, flag);
+		snprintf(result, sizeof(result), "flag%" PRIu32, flag);
 		return result;
 	}
 }
@@ -2540,7 +2540,7 @@ bool X86CommonArchitecture::Assemble(const string& code, uint64_t addr, DataBuff
 		finalCode = "\tsection .text align=1\n\tbits 64\n";
 
 	char orgStr[32];
-	sprintf(orgStr, "\torg 0x%" PRIx64 "\n", addr);
+	snprintf(orgStr, sizeof(orgStr), "\torg 0x%" PRIx64 "\n", addr);
 	finalCode += orgStr;
 
 	finalCode += "%line 0 input\n";
