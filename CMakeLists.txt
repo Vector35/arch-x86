@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
 
 project(arch_x86)
 
+OPTION(BUILD_SHARED_LIBS "Build shared libraries" OFF)
+OPTION(YASM_BUILD_TESTS "Enable building of tests" OFF)
+add_subdirectory(yasm)
+
 if((NOT BN_API_PATH) AND (NOT BN_INTERNAL_BUILD))
 	set(BN_API_PATH $ENV{BN_API_PATH})
 	if(NOT BN_API_PATH)
@@ -26,13 +30,10 @@ target_include_directories(arch_x86
 
 if(MSVC)
 	set(XED_PLATFORM win)
-	set(YASM_PATH win32/yasm.exe)
 elseif(APPLE)
 	set(XED_PLATFORM macos)
-	set(YASM_PATH mac/yasm)
 else()
 	set(XED_PLATFORM linux)
-	set(YASM_PATH linux/yasm)
 endif()
 
 find_library(XED_LIBRARY
@@ -62,5 +63,5 @@ if(BN_INTERNAL_BUILD)
 		LIBRARY_OUTPUT_DIRECTORY ${BN_CORE_PLUGIN_DIR}
 		RUNTIME_OUTPUT_DIRECTORY ${BN_CORE_PLUGIN_DIR})
 	add_custom_command(TARGET arch_x86 POST_BUILD
-		COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/yasm/${YASM_PATH} ${BN_CORE_PLUGIN_DIR})
+		COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:yasm> ${BN_CORE_PLUGIN_DIR})
 endif()
