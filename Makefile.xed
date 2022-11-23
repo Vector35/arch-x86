@@ -1,16 +1,22 @@
 download:
 	@echo "Fetching Dependancies"
+	rm -rf xed
+	rm -rf mbuild
 	git clone https://github.com/intelxed/xed.git xed
 	git clone https://github.com/intelxed/mbuild.git mbuild
+	cd xed && git checkout afbb851b5f2f2ac6cdb6e6d9bebbaf2d4e77286d
 
 	@echo "Reverting commit 9bdeca6d77065e5f1b23891655a26e510ffae74a"
 	cd xed && git revert 9bdeca6d77065e5f1b23891655a26e510ffae74a --no-edit
 
-build_xed:
+	cd mbuild && git apply ../xed-mbuild.patch
+
+linux:
 	rm -rf xedInc
 
 	@echo "Building XED"
 	# xed now assumes building in a subdir like ./build
+	rm -rf build
 	mkdir build
 	# this runs very well on Linux; but it sometimes has problems with Windows And Mac
 	cd build && \
@@ -21,23 +27,54 @@ build_xed:
 	mv xedKit/include/xed xedInc
 	mkdir lib || true
 
-linux: build_xed
-	mv xedKit/lib/libxed.a ./lib/libxed_linux.a
+	mv xedKit/lib/libxed.a ./lib/libxed_linux_`uname -m`.a
 
 	@echo "Cleaning Up"
 	rm -rf xedKit build
 
-windows: build_xed
-	mv xedKit/lib/xed.lib ./lib/xed_win.lib
+windows:
+	rm -rf xedInc
+
+	@echo "Building XED"
+	# xed now assumes building in a subdir like ./build
+	rm -rf build
+	mkdir build
+	cd build && \
+	py ../xed/mfile.py -j 9 --static --extra-flags=-fPIC --opt=3 --no-encoder install --install-dir=../xedKit && \
+	py ../xed/mfile.py -c
+
+	@echo "Setting Up"
+	mv xedKit/include/xed xedInc
+	mkdir lib || true
+
+	mv xedKit/lib/xed.lib ./lib/xed_win_${VSCMD_ARG_TGT_ARCH}.lib
 
 	@echo "Cleaning Up"
 	rm -rf xedKit build
 
-mac: build_xed
-	mv xedKit/lib/libxed.a ./lib/libxed_macos.a
+mac:
+	rm -rf xedInc
+
+	@echo "Building XED"
+	# xed now assumes building in a subdir like ./build
+	rm -rf build
+	mkdir build
+	# this runs very well on Linux; but it sometimes has problems with Windows And Mac
+	cd build && \
+	../xed/mfile.py -j 9 --static --extra-flags=-fPIC --extra-flags=-mmacosx-version-min=10.15.7 --opt=3 --no-encoder install --install-dir=../xedKit && \
+	../xed/mfile.py -c
+
+	@echo "Setting Up"
+	mv xedKit/include/xed xedInc
+	mkdir lib || true
+
+	mv xedKit/lib/libxed.a ./lib/libxed_macos_`uname -m`.a
 
 	@echo "Cleaning Up"
 	rm -rf xedKit build
+
+mac_universal:
+	lipo -output ./lib/libxed_macos.a -create ./lib/libxed_macos_arm64.a ./lib/libxed_macos_x86_64.a
 
 clean_repo:
 	rm -rf mbuild xed

@@ -31,7 +31,7 @@ END_LEGAL */
 #    define XED_DECODER
 #  endif
 #  if !defined(XED_GIT_VERSION)
-#    define XED_GIT_VERSION "11.2.0-7-gf86a405"
+#    define XED_GIT_VERSION "11.2.0-7-gb6f7275"
 #  endif
 #  if !defined(XED_MPX)
 #    define XED_MPX

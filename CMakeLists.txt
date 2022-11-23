@@ -29,11 +29,12 @@ target_include_directories(arch_x86
 	PRIVATE ${PROJECT_SOURCE_DIR}/xedInc)
 
 if(MSVC)
-	set(XED_PLATFORM win)
+	set(XED_PLATFORM win_$ENV{VSCMD_ARG_TGT_ARCH})
 elseif(APPLE)
 	set(XED_PLATFORM macos)
 else()
-	set(XED_PLATFORM linux)
+	execute_process(COMMAND uname -m OUTPUT_VARIABLE ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+	set(XED_PLATFORM linux_${ARCH})
 endif()
 
 find_library(XED_LIBRARY
