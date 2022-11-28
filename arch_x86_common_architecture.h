@@ -6,7 +6,7 @@
 #include "binaryninjaapi.h"
 #include "il.h"
 extern "C" {
-    #include "xedInc/xed-interface.h"
+    #include "xed-interface.h"
 }
 
 using namespace BinaryNinja;

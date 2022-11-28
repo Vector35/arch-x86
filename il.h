@@ -3,7 +3,7 @@
 #include <string>
 #include "binaryninjaapi.h"
 extern "C" {
-    #include "xedInc/xed-interface.h"
+    #include "xed-interface.h"
 }
 
 

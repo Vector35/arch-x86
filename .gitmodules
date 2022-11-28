@@ -1,3 +1,9 @@
 [submodule "yasm"]
 	path = yasm
 	url = https://github.com/Vector35/yasm.git
+[submodule "xed"]
+	path = xed
+	url = https://github.com/intelxed/xed.git
+[submodule "mbuild"]
+	path = mbuild
+	url = https://github.com/intelxed/mbuild.git

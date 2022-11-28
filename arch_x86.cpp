@@ -6,7 +6,7 @@
 #include "binaryninjaapi.h"
 #include "il.h"
 extern "C" {
-    #include "xedInc/xed-interface.h"
+    #include "xed-interface.h"
 }
 #include "arch_x86_common_architecture.h"
 
