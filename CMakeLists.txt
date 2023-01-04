@@ -8,7 +8,7 @@ add_subdirectory(yasm)
 
 set(XED_CONFIGURE_ARGS --no-encoder just-gen)
 if(WIN32)
-	execute_process(COMMAND ${CMAKE_COMMAND} -E env OS=Windows_NT
+	execute_process(COMMAND ${CMAKE_COMMAND} -E env OS=Windows_NT PYTHONPATH=${PROJECT_SOURCE_DIR}/mbuild
 		py -3 ${PROJECT_SOURCE_DIR}/xed/mfile.py ${XED_CONFIGURE_ARGS}
 		WORKING_DIRECTORY ${PROJECT_BINARY_DIR})
 else()
