@@ -246,7 +246,7 @@ static size_t ReadILOperand(LowLevelILFunction& il, const xed_decoded_inst_t* co
 
 // For most instructions, instruction_index == operand_index, but some instructions (floating point, some others) have an implicit first operand (st0), so we have to remap things a bit
 // Instruction index represents the 'nth' argument/opcode in the instruction, whereas the operand index is index that XED holds that operand in the instruction
-static size_t ReadFloatILOperand(LowLevelILFunction& il, const xed_decoded_inst_t* xedd, const size_t addr, const size_t instruction_index, const size_t operand_index)
+static size_t ReadFloatILOperand(LowLevelILFunction& il, const xed_decoded_inst_t* xedd, const size_t addr, const size_t instruction_index, const size_t operand_index, size_t opLen = 10)
 {
 	const unsigned int   operandSize = xed_decoded_inst_operand_length_bits(xedd, (unsigned)operand_index) / 8;
 	const xed_operand_enum_t op_name = xed_operand_name(xed_inst_operand(xed_decoded_inst_inst(xedd), (unsigned)operand_index));
@@ -272,19 +272,19 @@ static size_t ReadFloatILOperand(LowLevelILFunction& il, const xed_decoded_inst_
 	case XED_OPERAND_PTR:
 	case XED_OPERAND_RELBR:
 		if (xed_decoded_inst_get_immediate_is_signed(xedd))
-			return il.Operand(instruction_index, il.FloatConvert(10, il.FloatConstRaw(operandSize, xed_decoded_inst_get_signed_immediate(xedd))));
+			return il.Operand(instruction_index, il.FloatConvert(opLen, il.FloatConstRaw(operandSize, xed_decoded_inst_get_signed_immediate(xedd))));
 		else
-			return il.Operand(instruction_index, il.FloatConvert(10, il.FloatConstRaw(operandSize, xed_decoded_inst_get_unsigned_immediate(xedd))));
+			return il.Operand(instruction_index, il.FloatConvert(opLen, il.FloatConstRaw(operandSize, xed_decoded_inst_get_unsigned_immediate(xedd))));
 	case XED_OPERAND_IMM1:
-		return il.Operand(instruction_index, il.FloatConvert(10, il.FloatConstRaw(operandSize, xed_decoded_inst_get_second_immediate(xedd))));
+		return il.Operand(instruction_index, il.FloatConvert(opLen, il.FloatConstRaw(operandSize, xed_decoded_inst_get_second_immediate(xedd))));
 
 	// Memory Acesses
 	case XED_OPERAND_AGEN:
 	case XED_OPERAND_MEM0:
 	case XED_OPERAND_MEM1:  // In what case would the memory address size be 10?? (floating point ops?)
-		if (operandSize != 10)
-			return il.Operand(instruction_index, il.FloatConvert(10, il.Load(operandSize, GetILOperandMemoryAddress(il, xedd, addr, instruction_index, operand_index))));
-		return il.Operand(instruction_index, il.Load(10, GetILOperandMemoryAddress(il, xedd, addr, instruction_index, operand_index)));
+		if (operandSize != opLen)
+			return il.Operand(instruction_index, il.FloatConvert(opLen, il.Load(operandSize, GetILOperandMemoryAddress(il, xedd, addr, instruction_index, operand_index))));
+		return il.Operand(instruction_index, il.Load(opLen, GetILOperandMemoryAddress(il, xedd, addr, instruction_index, operand_index)));
 
 	default:
 		return il.Undefined();
@@ -823,8 +823,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatAdd(4,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 4),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4)
 			)));
 		break;
 	}
@@ -838,8 +838,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatAdd(4,
-				ReadFloatILOperand(il, xedd, addr, 1, 1),
-				ReadFloatILOperand(il, xedd, addr, 2, 2)
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4),
+				ReadFloatILOperand(il, xedd, addr, 2, 2, 4)
 			)));
 		break;
 	}
@@ -848,8 +848,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatAdd(8,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 8),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8)
 			)));
 		break;
 	}
@@ -863,8 +863,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatAdd(8,
-				ReadFloatILOperand(il, xedd, addr, 1, 1),
-				ReadFloatILOperand(il, xedd, addr, 2, 2)
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8),
+				ReadFloatILOperand(il, xedd, addr, 2, 2, 8)
 			)));
 		break;
 	}
@@ -873,8 +873,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatSub(4,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 4),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4)
 			)));
 		break;
 	}
@@ -888,8 +888,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatSub(4,
-				ReadFloatILOperand(il, xedd, addr, 1, 1),
-				ReadFloatILOperand(il, xedd, addr, 2, 2)
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4),
+				ReadFloatILOperand(il, xedd, addr, 2, 2, 4)
 			)));
 		break;
 	}
@@ -898,8 +898,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatSub(8,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 8),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8)
 			)));
 		break;
 	}
@@ -913,8 +913,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatSub(8,
-				ReadFloatILOperand(il, xedd, addr, 1, 1),
-				ReadFloatILOperand(il, xedd, addr, 2, 2
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8),
+				ReadFloatILOperand(il, xedd, addr, 2, 2, 8
 			)))
 		);
 		break;
@@ -924,8 +924,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatMult(4,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 4),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4)
 			)));
 		break;
 	}
@@ -939,8 +939,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatMult(4,
-				ReadFloatILOperand(il, xedd, addr, 1, 1),
-				ReadFloatILOperand(il, xedd, addr, 2, 2)
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4),
+				ReadFloatILOperand(il, xedd, addr, 2, 2, 4)
 			)));
 		break;
 	}
@@ -949,8 +949,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatMult(8,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 8),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8)
 			)));
 		break;
 	}
@@ -964,8 +964,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatMult(8,
-				ReadFloatILOperand(il, xedd, addr, 1, 1),
-				ReadFloatILOperand(il, xedd, addr, 2, 2)
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8),
+				ReadFloatILOperand(il, xedd, addr, 2, 2, 8)
 			)));
 		break;
 	}
@@ -974,8 +974,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatDiv(4,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 4),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4)
 			)));
 		break;
 	}
@@ -989,8 +989,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatDiv(4,
-				ReadFloatILOperand(il, xedd, addr, 1, 1),
-				ReadFloatILOperand(il, xedd, addr, 2, 2)
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4),
+				ReadFloatILOperand(il, xedd, addr, 2, 2, 4)
 			)));
 		break;
 	}
@@ -999,8 +999,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	{
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatDiv(8,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 8),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8)
 			)));
 		break;
 	}
@@ -1014,8 +1014,8 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		}
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 0, 0,
 			il.FloatDiv(8,
-				ReadFloatILOperand(il, xedd, addr, 1, 1),
-				ReadFloatILOperand(il, xedd, addr, 2, 2)
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8),
+				ReadFloatILOperand(il, xedd, addr, 2, 2, 8)
 			)));
 		break;
 	}
@@ -2190,7 +2190,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 						il.ShiftLeft(
 							opOneLen,
 							il.LogicalShiftRight(opOneLen,
-								ReadFloatILOperand(il, xedd, addr, 1, 1),
+								ReadFloatILOperand(il, xedd, addr, 1, 1, opOneLen),
 								// vmovss ONLY suppors xmm, so we do not need to branch on operand size
 								il.Const(1, 32)
 							),
@@ -3870,59 +3870,25 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 		il.AddInstruction(WriteILOperand(il, xedd, addr, 1, 1, il.Register(10, LLIL_TEMP(0))));
 		break;
 
+	case XED_ICLASS_VUCOMISS:
 	case XED_ICLASS_UCOMISS:
-	case XED_ICLASS_UCOMISD:
-		// Fallthrough, from intel documentation CompareOrdered and ComparedUnordered
-		// set the flags the same way.
 	case XED_ICLASS_COMISS:
-	case XED_ICLASS_COMISD:
-	{
-		ExprId set_parity_flag_expr = il.SetFlag(IL_FLAG_P,
-			il.FloatCompareUnordered(
-				opOneLen,
-				ReadFloatILOperand(il, xedd, addr, 0, 0),
-				ReadFloatILOperand(il, xedd, addr, 1, 1)
-			)
-		);
-		ExprId set_carry_flag_insn = il.SetFlag(IL_FLAG_C,
-			il.Or(
-				opOneLen,
-				il.FloatCompareLessThan(
-					opOneLen,
-					ReadFloatILOperand(il, xedd, addr, 0, 0),
-					ReadFloatILOperand(il, xedd, addr, 1, 1)
-				),
-				il.FloatCompareUnordered(
-					opOneLen,
-					ReadFloatILOperand(il, xedd, addr, 0, 0),
-					ReadFloatILOperand(il, xedd, addr, 1, 1)
-				)
-			)
-		);
-		ExprId set_zero_flag_insn = il.SetFlag(IL_FLAG_Z,
-			il.Or(
-				opOneLen,
-				il.FloatCompareEqual(
-					opOneLen,
-					ReadFloatILOperand(il, xedd, addr, 0, 0),
-					ReadFloatILOperand(il, xedd, addr, 1, 1)
-				),
-				il.FloatCompareUnordered(
-					opOneLen,
-					ReadFloatILOperand(il, xedd, addr, 0, 0),
-					ReadFloatILOperand(il, xedd, addr, 1, 1)
-				)
-			)
-		);
-		il.AddInstruction(set_parity_flag_expr);
-		il.AddInstruction(set_carry_flag_insn);
-		il.AddInstruction(set_zero_flag_insn);
-		// These flags always get unset
-		il.AddInstruction(il.SetFlag(IL_FLAG_S, il.Const(1, 0)));
-		il.AddInstruction(il.SetFlag(IL_FLAG_O, il.Const(1, 0)));
-		il.AddInstruction(il.SetFlag(IL_FLAG_A, il.Const(1, 0)));
+		il.AddInstruction(
+			il.FloatSub(4,
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 4),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 4),
+			IL_FLAGWRITE_VCOMI));
 		break;
-	}
+
+	case XED_ICLASS_VUCOMISD:
+	case XED_ICLASS_UCOMISD:
+	case XED_ICLASS_COMISD:
+		il.AddInstruction(
+			il.FloatSub(8,
+				ReadFloatILOperand(il, xedd, addr, 0, 0, 8),
+				ReadFloatILOperand(il, xedd, addr, 1, 1, 8),
+			IL_FLAGWRITE_VCOMI));
+		break;
 
 	case XED_ICLASS_FCOMI:
 	case XED_ICLASS_FUCOMI:

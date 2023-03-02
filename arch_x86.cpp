@@ -2126,6 +2126,19 @@ size_t X86CommonArchitecture::GetFlagWriteLowLevelIL(BNLowLevelILOperation op, s
 	default:
 		break;
 	}
+
+	if (flagWriteType == IL_FLAGWRITE_VCOMI)
+	{
+		switch (flag)
+		{
+		case IL_FLAG_S:
+		case IL_FLAG_O:
+		case IL_FLAG_A:
+			return il.Const(0, 0);
+		default:
+			break;
+		}
+	}
 	if (((flagWriteType == IL_FLAGWRITE_X87COM) || (flagWriteType == IL_FLAGWRITE_X87C1Z)) && (flag == IL_FLAG_C1))
 		return il.Const(0, 0);
 	return Architecture::GetFlagWriteLowLevelIL(op, size, flagWriteType, flag, operands, operandCount, il);
@@ -2225,6 +2238,8 @@ string X86CommonArchitecture::GetSemanticFlagClassName(uint32_t semClass)
 		return "x87com";
 	case IL_FLAG_CLASS_X87COMI:
 		return "x87comi";
+	case IL_FLAG_CLASS_VCOMI:
+		return "vcomi";
 	default:
 		return "";
 	}
@@ -2232,7 +2247,7 @@ string X86CommonArchitecture::GetSemanticFlagClassName(uint32_t semClass)
 
 vector<uint32_t> X86CommonArchitecture::GetAllSemanticFlagClasses()
 {
-	return vector<uint32_t> {IL_FLAG_CLASS_X87COM, IL_FLAG_CLASS_X87COMI};
+	return vector<uint32_t> {IL_FLAG_CLASS_X87COM, IL_FLAG_CLASS_X87COMI, IL_FLAG_CLASS_VCOMI};
 }
 
 string X86CommonArchitecture::GetSemanticFlagGroupName(uint32_t semGroup)
@@ -2284,6 +2299,8 @@ string X86CommonArchitecture::GetFlagWriteTypeName(uint32_t flags)
 		return "x87c1z";
 	case IL_FLAGWRITE_X87RND:
 		return "x87rnd";
+	case IL_FLAGWRITE_VCOMI:
+		return "vcomi";
 	default:
 		return "";
 	}
@@ -2299,6 +2316,8 @@ uint32_t X86CommonArchitecture::GetSemanticClassForFlagWriteType(uint32_t writeT
 		return IL_FLAG_CLASS_X87COM;
 	case IL_FLAGWRITE_X87COMI:
 		return IL_FLAG_CLASS_X87COMI;
+	case IL_FLAGWRITE_VCOMI:
+		return IL_FLAG_CLASS_VCOMI;
 	default:
 		return IL_FLAG_CLASS_INT;
 	}
@@ -2307,13 +2326,15 @@ uint32_t X86CommonArchitecture::GetSemanticClassForFlagWriteType(uint32_t writeT
 vector<uint32_t> X86CommonArchitecture::GetAllFlagWriteTypes()
 {
 	return vector<uint32_t> {IL_FLAGWRITE_ALL, IL_FLAGWRITE_NOCARRY, IL_FLAGWRITE_CO,
-		IL_FLAGWRITE_X87COM, IL_FLAGWRITE_X87COMI, IL_FLAGWRITE_X87C1Z, IL_FLAGWRITE_X87RND};
+		IL_FLAGWRITE_X87COM, IL_FLAGWRITE_X87COMI, IL_FLAGWRITE_X87C1Z, IL_FLAGWRITE_X87RND,
+		IL_FLAGWRITE_VCOMI};
 }
 
 BNFlagRole X86CommonArchitecture::GetFlagRole(uint32_t flag, uint32_t semClass)
 {
-	if (semClass == IL_FLAG_CLASS_X87COM)
+	switch (semClass)
 	{
+	case IL_FLAG_CLASS_X87COM:
 		switch (flag)
 		{
 		case IL_FLAG_C0:
@@ -2325,6 +2346,23 @@ BNFlagRole X86CommonArchitecture::GetFlagRole(uint32_t flag, uint32_t semClass)
 		default:
 			return SpecialFlagRole;
 		}
+
+	case IL_FLAG_CLASS_VCOMI:
+		switch (flag)
+		{
+		case IL_FLAG_C:
+			return CarryFlagRole;
+		case IL_FLAG_Z:
+			return ZeroFlagRole;
+		case IL_FLAG_P:
+			return UnorderedFlagRole;
+		default:
+			// O, A, S cleared
+			return SpecialFlagRole;
+		}
+
+	default:
+		break;
 	}
 
 	switch (flag)
@@ -2436,40 +2474,48 @@ map<uint32_t, BNLowLevelILFlagCondition> X86CommonArchitecture::GetFlagCondition
 	case IL_FLAG_GROUP_E:
 		return map<uint32_t, BNLowLevelILFlagCondition> {
 			{IL_FLAG_CLASS_INT, LLFC_E},
-			{IL_FLAG_CLASS_X87COMI, LLFC_FE}
+			{IL_FLAG_CLASS_X87COMI, LLFC_FE},
+			{IL_FLAG_CLASS_VCOMI, LLFC_FE},
 		};
 	case IL_FLAG_GROUP_NE:
 		return map<uint32_t, BNLowLevelILFlagCondition> {
 			{IL_FLAG_CLASS_INT, LLFC_NE},
-			{IL_FLAG_CLASS_X87COMI, LLFC_FNE}
+			{IL_FLAG_CLASS_X87COMI, LLFC_FNE},
+			{IL_FLAG_CLASS_VCOMI, LLFC_FNE},
 		};
 	case IL_FLAG_GROUP_LT:
 		return map<uint32_t, BNLowLevelILFlagCondition> {
 			{IL_FLAG_CLASS_INT, LLFC_ULT},
-			{IL_FLAG_CLASS_X87COMI, LLFC_FLT}
+			{IL_FLAG_CLASS_X87COMI, LLFC_FLT},
+			{IL_FLAG_CLASS_VCOMI, LLFC_FLT},
 		};
 	case IL_FLAG_GROUP_LE:
 		return map<uint32_t, BNLowLevelILFlagCondition> {
 			{IL_FLAG_CLASS_INT, LLFC_ULE},
-			{IL_FLAG_CLASS_X87COMI, LLFC_FLE}
+			{IL_FLAG_CLASS_X87COMI, LLFC_FLE},
+			{IL_FLAG_CLASS_VCOMI, LLFC_FLE},
 		};
 	case IL_FLAG_GROUP_GE:
 		return map<uint32_t, BNLowLevelILFlagCondition> {
 			{IL_FLAG_CLASS_INT, LLFC_UGE},
-			{IL_FLAG_CLASS_X87COMI, LLFC_FGE}
+			{IL_FLAG_CLASS_X87COMI, LLFC_FGE},
+			{IL_FLAG_CLASS_VCOMI, LLFC_FGE},
 		};
 	case IL_FLAG_GROUP_GT:
 		return map<uint32_t, BNLowLevelILFlagCondition> {
 			{IL_FLAG_CLASS_INT, LLFC_UGT},
-			{IL_FLAG_CLASS_X87COMI, LLFC_FGT}
+			{IL_FLAG_CLASS_X87COMI, LLFC_FGT},
+			{IL_FLAG_CLASS_VCOMI, LLFC_FGT},
 		};
 	case IL_FLAG_GROUP_PE:
 		return map<uint32_t, BNLowLevelILFlagCondition> {
-			{IL_FLAG_CLASS_X87COMI, LLFC_FUO}
+			{IL_FLAG_CLASS_X87COMI, LLFC_FUO},
+			{IL_FLAG_CLASS_VCOMI, LLFC_FUO},
 		};
 	case IL_FLAG_GROUP_PO:
 		return map<uint32_t, BNLowLevelILFlagCondition> {
-			{IL_FLAG_CLASS_X87COMI, LLFC_FO}
+			{IL_FLAG_CLASS_X87COMI, LLFC_FO},
+			{IL_FLAG_CLASS_VCOMI, LLFC_FO},
 		};
 	default:
 		return map<uint32_t, BNLowLevelILFlagCondition>();
@@ -2493,6 +2539,8 @@ vector<uint32_t> X86CommonArchitecture::GetFlagsWrittenByFlagWriteType(uint32_t 
 	case IL_FLAGWRITE_X87C1Z:
 	case IL_FLAGWRITE_X87RND:
 		return vector<uint32_t>{ IL_FLAG_C1 };
+	case IL_FLAGWRITE_VCOMI:
+		return vector<uint32_t>{ IL_FLAG_C, IL_FLAG_P, IL_FLAG_A, IL_FLAG_Z, IL_FLAG_S, IL_FLAG_O };
 	default:
 		return vector<uint32_t>();
 	}
