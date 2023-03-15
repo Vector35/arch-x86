@@ -5062,6 +5062,24 @@ string X86CommonArchitecture::GetIntrinsicName(uint32_t intrinsic)
     case INTRINSIC_XED_IFORM_POPCNT_GPR64_GPRMEM64:
         return "_popcnt_u64";
 
+    case INTRINSIC_XED_IFORM_REP_MOVSB:
+        return "__memcpy_u8";
+    case INTRINSIC_XED_IFORM_REP_MOVSW:
+        return "__memcpy_u16";
+    case INTRINSIC_XED_IFORM_REP_MOVSD:
+        return "__memcpy_u32";
+    case INTRINSIC_XED_IFORM_REP_MOVSQ:
+        return "__memcpy_u64";
+
+    case INTRINSIC_XED_IFORM_REP_STOSB:
+        return "__memfill_u8";
+    case INTRINSIC_XED_IFORM_REP_STOSW:
+        return "__memfill_u16";
+    case INTRINSIC_XED_IFORM_REP_STOSD:
+        return "__memfill_u32";
+    case INTRINSIC_XED_IFORM_REP_STOSQ:
+        return "__memfill_u64";
+
     default:
         // for iform without a corresponding intrisic, use the iform string
         string iformString = xed_iform_enum_t2str((xed_iform_enum_t(intrinsic - 1000)));
