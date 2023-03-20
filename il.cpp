@@ -2489,7 +2489,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 					auto dstExpr = il.Sub(addrSize, il.Register(addrSize, dstReg), numBytesExpr);
 					auto srcExpr = il.Sub(addrSize, il.Register(addrSize, srcReg), numBytesExpr);
 					il.AddInstruction(il.Intrinsic(
-						vector<RegisterOrFlag> { RegisterOrFlag::Register(dstReg), RegisterOrFlag::Register(GetCountRegister(addrSize)) },
+						vector<RegisterOrFlag> { RegisterOrFlag::Register(dstReg), RegisterOrFlag::Register(srcReg), RegisterOrFlag::Register(GetCountRegister(addrSize)) },
 						intrinsic,
 						vector<ExprId> { dstExpr, srcExpr, numBytesExpr }
 					));
@@ -2497,7 +2497,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				[&]() // Direction flag 0
 				{
 					il.AddInstruction(il.Intrinsic(
-						vector<RegisterOrFlag> { RegisterOrFlag::Register(dstReg), RegisterOrFlag::Register(GetCountRegister(addrSize)) },
+						vector<RegisterOrFlag> { RegisterOrFlag::Register(dstReg), RegisterOrFlag::Register(srcReg), RegisterOrFlag::Register(GetCountRegister(addrSize)) },
 						intrinsic,
 						vector<ExprId> { il.Register(addrSize, dstReg), il.Register(addrSize, srcReg), numBytesExpr }
 					));
