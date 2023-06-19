@@ -83,6 +83,7 @@ static size_t GetILOperandMemoryAddress(LowLevelILFunction& il, const xed_decode
 
 		//  [...+reg] or [...+reg*const] or [reg*const]
 		const xed_reg_enum_t index = xed_decoded_inst_get_index_reg(xedd, 0);
+		bool constIsPointer = false;
 		if (index != XED_REG_INVALID)
 			if (!xed_decoded_inst_get_attribute(xedd, XED_ATTRIBUTE_INDEX_REG_IS_POINTER)) // MPX...TODO (extra registers)
 			{
@@ -103,9 +104,13 @@ static size_t GetILOperandMemoryAddress(LowLevelILFunction& il, const xed_decode
 										il.Register(addrSize, index),
 										il.Const(1, shift)));
 					else
+					{
+						// case for [...+reg*const] so we know that the const must be a pointer
+						constIsPointer = true;
 						offset = il.ShiftLeft(addrSize,
 									il.Register(addrSize, index),
 									il.Const(1, shift));
+					}
 				}
 				else
 					if (offset != BN_INVALID_EXPR)
@@ -117,7 +122,7 @@ static size_t GetILOperandMemoryAddress(LowLevelILFunction& il, const xed_decode
 			}
 
 		//  The [...+const] bit or just [const]
-		bool isJmpClass = (XED_ICLASS_JMP == xed_decoded_inst_get_iclass(xedd));
+		bool isJmpClass = (XED_ICLASS_JMP == xed_decoded_inst_get_iclass(xedd)) || constIsPointer;
 		if (xed_operand_values_has_memory_displacement(xed_decoded_inst_operands_const(xedd)) && (disp != 0))
 		{
 			if (offset != BN_INVALID_EXPR)
