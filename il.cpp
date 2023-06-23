@@ -2454,7 +2454,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_MOVSD:
 	case XED_ICLASS_MOVSQ:
 	{
-		size_t shift = 1;
+		size_t shift = 0;
 		uint32_t intrinsic = INTRINSIC_XED_IFORM_REP_MOVSB;
 		uint32_t srcReg = addrSize == 4 ? XED_REG_ESI : XED_REG_RSI;
 		uint32_t dstReg = addrSize == 4 ? XED_REG_EDI : XED_REG_RDI;
@@ -2486,7 +2486,12 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 		if (xed_operand_values_has_real_rep(xed_decoded_inst_operands_const(xedd)))
 		{
-			auto numBytesExpr = il.ShiftLeft(addrSize, il.Register(addrSize, GetCountRegister(addrSize)), il.Const(addrSize, shift));
+			ExprId numBytesExpr;
+			if (shift)
+				numBytesExpr = il.ShiftLeft(addrSize, il.Register(addrSize, GetCountRegister(addrSize)), il.Const(addrSize, shift));
+			else
+				numBytesExpr = il.Register(addrSize, GetCountRegister(addrSize));
+
 			DirFlagIf(il,
 				[&](){},
 				[&]() // Direction flag 1
@@ -3160,7 +3165,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 	case XED_ICLASS_REP_STOSD:
 	case XED_ICLASS_REP_STOSQ:
 	{
-		size_t shift = 1;
+		size_t shift = 0;
 		uint32_t intrinsic = INTRINSIC_XED_IFORM_REP_STOSB;
 		size_t moveSize = 1;
 		ExprId moveReg = 0;
@@ -3196,7 +3201,11 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 
 		if (xed_operand_values_has_real_rep(xed_decoded_inst_operands_const(xedd)))
 		{
-			auto numBytesExpr = il.ShiftLeft(addrSize, il.Register(addrSize, GetCountRegister(addrSize)), il.Const(addrSize, shift));
+			ExprId numBytesExpr;
+			if (shift)
+				numBytesExpr = il.ShiftLeft(addrSize, il.Register(addrSize, GetCountRegister(addrSize)), il.Const(addrSize, shift));
+			else
+				numBytesExpr = il.Register(addrSize, GetCountRegister(addrSize));
 			DirFlagIf(il,
 				[&](){},
 				[&]() // Direction flag 1
