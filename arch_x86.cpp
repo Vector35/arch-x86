@@ -172,6 +172,7 @@ enum COFFx64RelocationType : uint32_t
 
 enum PeRelocationType : uint32_t
 {
+	PE_IMAGE_USER_DEFINED             = 0xffffffff, // User defined relocation type for synthesized relocations at IAT sites.
 	PE_IMAGE_REL_BASED_ABSOLUTE       = 0,  // The base relocation is skipped. This type can be used to pad a block.
 	PE_IMAGE_REL_BASED_HIGH           = 1,  // The base relocation adds the high 16 bits of the difference to the 16-bit field at offset. The 16-bit field represents the high value of a 32-bit word.
 	PE_IMAGE_REL_BASED_LOW            = 2,  // The base relocation adds the low 16 bits of the difference to the 16-bit field at offset. The 16-bit field represents the low half of a 32-bit word.
@@ -4663,7 +4664,18 @@ public:
 		uint32_t* data32 = (uint32_t*)dest;
 		uint16_t* data16 = (uint16_t*)dest;
 		auto info = reloc->GetInfo();
-		if (info.size == 8)
+		if ((uint32_t)info.nativeType == PE_IMAGE_USER_DEFINED)
+		{
+			if (info.size == 8)
+			{
+				data64[0] = info.target;
+			}
+			else if (info.size == 4)
+			{
+				data32[0] = (uint32_t)info.target;
+			}
+		}
+		else if (info.size == 8)
 		{
 			data64[0] += info.base;
 		}
@@ -4707,6 +4719,9 @@ public:
 				break;
 			case PE_IMAGE_REL_BASED_LOW:
 				reloc.size = 2;
+				break;
+			case PE_IMAGE_USER_DEFINED:
+				reloc.type = StandardRelocationType;
 				break;
 			default:
 				// By default, PE relocations are correct when not rebased.
