@@ -1850,7 +1850,7 @@ bool GetLowLevelILForInstruction(Architecture* arch, const uint64_t addr, LowLev
 				il.AddInstruction(il.SystemCall());
 				break;
 			default:
-				il.AddInstruction(il.Undefined());
+				il.AddInstruction(il.Trap(immediateOne));
 				break;
 		}
 		break;

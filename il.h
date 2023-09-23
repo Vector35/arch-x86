@@ -82,6 +82,8 @@ struct DISASSEMBLY_OPTIONS
 #define TRAP_ALIGN     17
 #define TRAP_MCE       18
 #define TRAP_SIMD      19
+// interrupts [20, 31] aren't mentioned in Intel SDM
+// interrupts [32, 255] are user defined
 
 #define REG_STACK_X87   0x999
 #define REG_X87_r(n)   (0x1000 + (n))             // The fake "real" (physical) register
