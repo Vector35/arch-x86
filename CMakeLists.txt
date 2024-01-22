@@ -31,6 +31,14 @@ file(GLOB SOURCES *.cpp *.h
 	${PROJECT_SOURCE_DIR}/xed/src/dec/*.c
 	${PROJECT_BINARY_DIR}/obj/*.c)
 
+# This accounts for the source code file replacement in
+# https://github.com/intelxed/xed/blob/d41e876ba1bda5e53af2db74700216da29752fd7/datafiles/knc/files-no-avx512f.cfg#L58-L59
+# See https://github.com/Vector35/binaryninja-api/issues/4617 for more details
+# Note to who updates xed: the path replacement file may change, search for its name in the xed directory to find its
+# newest location
+list(REMOVE_ITEM SOURCES ${PROJECT_SOURCE_DIR}/xed/src/common/xed-operand-values-interface-repl.c)
+list(APPEND SOURCES ${PROJECT_SOURCE_DIR}/xed/datafiles/knc/xed-operand-values-interface-uisa.c)
+
 if(DEMO)
 	add_library(arch_x86 STATIC ${SOURCES})
 else()
