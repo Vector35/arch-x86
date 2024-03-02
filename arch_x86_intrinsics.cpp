@@ -13,6 +13,24 @@ extern "C" {
 using namespace BinaryNinja;
 using namespace std;
 
+BNIntrinsicClass X86CommonArchitecture::GetIntrinsicClass(uint32_t intrinsic)
+{
+    switch (intrinsic)
+    {
+    case INTRINSIC_XED_IFORM_REP_MOVSB:
+    case INTRINSIC_XED_IFORM_REP_MOVSW:
+    case INTRINSIC_XED_IFORM_REP_MOVSD:
+    case INTRINSIC_XED_IFORM_REP_MOVSQ:
+    case INTRINSIC_XED_IFORM_REP_STOSB:
+    case INTRINSIC_XED_IFORM_REP_STOSW:
+    case INTRINSIC_XED_IFORM_REP_STOSD:
+    case INTRINSIC_XED_IFORM_REP_STOSQ:
+        return MemoryIntrinsicClass;
+    default:
+        return GeneralIntrinsicClass;
+    }
+}
+
 string X86CommonArchitecture::GetIntrinsicName(uint32_t intrinsic)
 {
     switch (intrinsic)

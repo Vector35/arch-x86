@@ -57,7 +57,7 @@ public:
 	virtual vector<uint32_t> GetSystemRegisters() override;
 	virtual bool GetInstructionInfo(const uint8_t* data, uint64_t addr, size_t maxLen, InstructionInfo& result) override;
 	virtual bool GetInstructionText(const uint8_t* data, uint64_t addr, size_t& len, vector<InstructionTextToken>& result) override;
-	
+
     virtual bool GetInstructionLowLevelIL(const uint8_t* data, uint64_t addr, size_t& len, LowLevelILFunction& il) override;
 	virtual size_t GetFlagWriteLowLevelIL(BNLowLevelILOperation op, size_t size, uint32_t flagWriteType,
 		uint32_t flag, BNRegisterOrConstant* operands, size_t operandCount, LowLevelILFunction& il) override;
@@ -82,10 +82,11 @@ public:
 	virtual vector<uint32_t> GetAllRegisterStacks() override;
 	virtual BNRegisterStackInfo GetRegisterStackInfo(uint32_t regStack) override;
 
-    virtual string GetIntrinsicName(uint32_t intrinsic) override;
-    virtual vector<uint32_t> GetAllIntrinsics() override;
-    virtual vector<NameAndType> GetIntrinsicInputs(uint32_t intrinsic) override;
-    virtual vector<Confidence<Ref<Type>>> GetIntrinsicOutputs(uint32_t intrinsic) override;
+	virtual BNIntrinsicClass GetIntrinsicClass(uint32_t intrinsic) override;
+	virtual string GetIntrinsicName(uint32_t intrinsic) override;
+	virtual vector<uint32_t> GetAllIntrinsics() override;
+	virtual vector<NameAndType> GetIntrinsicInputs(uint32_t intrinsic) override;
+	virtual vector<Confidence<Ref<Type>>> GetIntrinsicOutputs(uint32_t intrinsic) override;
 
 	virtual bool CanAssemble() override;
 	virtual bool Assemble(const string& code, uint64_t addr, DataBuffer& result, string& errors) override;
